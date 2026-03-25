@@ -109,7 +109,19 @@ class SimulatedBroker(BrokerAdapter):
         else:  # SELL
             existing = self._find_open_position(order.symbol, "BUY")
             if existing is None:
-                # Short sell — open a new SELL position
+                # Short sell — open a new SELL position, requires margin
+                required = total_cost + commission
+                if required > self._balance:
+                    resp = OrderResponse(
+                        order_id=order_id,
+                        status="rejected",
+                        message="Insufficient balance for short sell",
+                    )
+                    self._orders.append(resp)
+                    return resp
+
+                self._balance -= required
+                self._used_margin += total_cost
                 self._positions.append(
                     Position(
                         symbol=order.symbol,
@@ -121,12 +133,13 @@ class SimulatedBroker(BrokerAdapter):
                         product_type=order.product_type,
                     )
                 )
+                fill_qty = order.quantity
             else:
-                sell_qty = min(order.quantity, existing.quantity)
-                pnl = (fill_price - existing.entry_price) * sell_qty
-                self._balance += (fill_price * sell_qty) - commission
-                self._used_margin -= existing.entry_price * sell_qty
-                existing.quantity -= sell_qty
+                fill_qty = min(order.quantity, existing.quantity)
+                pnl = (fill_price - existing.entry_price) * fill_qty
+                self._balance += (fill_price * fill_qty) - commission
+                self._used_margin -= existing.entry_price * fill_qty
+                existing.quantity -= fill_qty
                 existing.pnl += pnl
 
                 if existing.quantity == Decimal("0"):
@@ -136,7 +149,7 @@ class SimulatedBroker(BrokerAdapter):
             order_id=order_id,
             status="filled",
             fill_price=fill_price,
-            fill_quantity=order.quantity,
+            fill_quantity=fill_qty if order.action == "SELL" else order.quantity,
         )
         self._orders.append(resp)
         return resp
@@ -157,7 +170,7 @@ class SimulatedBroker(BrokerAdapter):
                     fill_price=o.fill_price,
                     fill_quantity=o.fill_quantity,
                 )
-        return OrderStatus(order_id=order_id, status="rejected")
+        return OrderStatus(order_id=order_id, status="not_found")
 
     # -- Portfolio -----------------------------------------------------------
 
