@@ -56,3 +56,12 @@ async def create_authenticated_user(
         json={"email": email, "password": "securepass123"},
     )
     return resp.json()
+
+
+@pytest_asyncio.fixture
+async def redis_client():
+    from redis.asyncio import Redis
+    client = Redis.from_url("redis://localhost:6379/1")  # test DB 1
+    yield client
+    await client.flushdb()
+    await client.aclose()
