@@ -5,6 +5,7 @@ from redis.asyncio import Redis
 
 from app.auth.router import router as auth_router
 from app.brokers.router import router as broker_router
+from app.strategies.router import router as strategy_router
 from app.config import settings
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.rate_limiter import RateLimiterMiddleware
@@ -26,6 +27,7 @@ app.add_middleware(RateLimiterMiddleware, redis=redis_pool)
 app.add_middleware(RequestLoggingMiddleware)
 app.include_router(auth_router)
 app.include_router(broker_router)
+app.include_router(strategy_router)
 
 
 @app.get("/api/v1/health")
