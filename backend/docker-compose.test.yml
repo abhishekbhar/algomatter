@@ -1,0 +1,14 @@
+services:
+  test-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gainguard_test
+      POSTGRES_PASSWORD: gainguard_test
+      POSTGRES_DB: gainguard_test
+    ports:
+      - "5433:5432"
+
+  test-redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
