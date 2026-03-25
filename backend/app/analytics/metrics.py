@@ -41,7 +41,7 @@ def compute_metrics(
     gross_profit = sum(t["pnl"] for t in trades if t["pnl"] > 0)
     gross_loss = abs(sum(t["pnl"] for t in trades if t["pnl"] < 0))
     if gross_loss == 0:
-        profit_factor = 0.0 if gross_profit == 0 else float("inf")
+        profit_factor = 0.0 if gross_profit == 0 else 9999.99
     else:
         profit_factor = gross_profit / gross_loss
 
