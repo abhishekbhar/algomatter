@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "generate-types": "openapi-typescript http://localhost:8000/openapi.json -o lib/api/generated-types.ts"
   },
   "dependencies": {
     "@chakra-ui/next-js": "^2.4.2",
