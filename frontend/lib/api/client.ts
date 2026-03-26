@@ -88,6 +88,12 @@ export async function apiClient<T = unknown>(
         headers: reqHeaders,
         body: fetchOpts.body,
       });
+    } else {
+      clearTokens();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+      throw new ApiError(401, "Session expired");
     }
   }
 

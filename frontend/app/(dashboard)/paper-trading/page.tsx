@@ -12,16 +12,7 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { usePaperSessions, useStrategies } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatDate, formatCurrency } from "@/lib/utils/formatters";
-
-type Session = {
-  id: string;
-  strategy_id: string;
-  initial_capital: string;
-  current_balance: string;
-  status: string;
-  started_at: string;
-  [key: string]: unknown;
-};
+import type { PaperSession } from "@/lib/api/types";
 
 export default function PaperTradingPage() {
   const router = useRouter();
@@ -40,7 +31,7 @@ export default function PaperTradingPage() {
     return map;
   }, [strategies]);
 
-  const list = (sessions ?? []) as Session[];
+  const list = sessions ?? [];
   const filtered = list.filter(
     (s) => statusFilter === "all" || s.status === statusFilter,
   );
@@ -70,7 +61,7 @@ export default function PaperTradingPage() {
     }
   };
 
-  const columns: Column<Session>[] = [
+  const columns: Column<PaperSession>[] = [
     {
       key: "strategy_id", header: "Strategy",
       render: (v) => strategyMap[String(v)] ?? String(v),
@@ -171,7 +162,7 @@ export default function PaperTradingPage() {
         </Flex>
       </Flex>
 
-      <DataTable<Session>
+      <DataTable<PaperSession>
         columns={columns}
         data={filtered}
         isLoading={isLoading}

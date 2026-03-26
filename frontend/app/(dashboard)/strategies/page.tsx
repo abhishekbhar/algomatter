@@ -10,15 +10,7 @@ import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { useStrategies } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatDate } from "@/lib/utils/formatters";
-
-type Strategy = {
-  id: string;
-  name: string;
-  mode: string;
-  is_active: boolean;
-  created_at: string;
-  [key: string]: unknown;
-};
+import type { Strategy } from "@/lib/api/types";
 
 export default function StrategiesPage() {
   const router = useRouter();
@@ -119,7 +111,7 @@ export default function StrategiesPage() {
 
       <DataTable<Strategy>
         columns={columns}
-        data={filtered as Strategy[]}
+        data={filtered}
         isLoading={isLoading}
         emptyMessage="No strategies found. Create your first strategy to get started."
         onRowClick={(row) => router.push(`/strategies/${row.id}`)}

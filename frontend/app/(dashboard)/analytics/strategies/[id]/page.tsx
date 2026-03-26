@@ -16,24 +16,17 @@ import {
 } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatCurrency, formatPercent, formatNumber } from "@/lib/utils/formatters";
+import type { AnalyticsTrade, EquityCurvePoint } from "@/lib/api/types";
 
-type Trade = Record<string, unknown>;
-
-const tradeColumns: Column<Trade>[] = [
+const tradeColumns: Column<AnalyticsTrade>[] = [
   { key: "symbol", header: "Symbol", sortable: true },
-  { key: "side", header: "Side" },
+  { key: "action", header: "Action" },
   { key: "quantity", header: "Qty", sortable: true },
   {
-    key: "entry_price",
-    header: "Entry",
+    key: "fill_price",
+    header: "Fill Price",
     sortable: true,
-    render: (v) => formatCurrency(Number(v ?? 0)),
-  },
-  {
-    key: "exit_price",
-    header: "Exit",
-    sortable: true,
-    render: (v) => (v != null ? formatCurrency(Number(v)) : "—"),
+    render: (v) => (v != null ? formatCurrency(Number(v)) : "\u2014"),
   },
   {
     key: "pnl",
@@ -41,8 +34,16 @@ const tradeColumns: Column<Trade>[] = [
     sortable: true,
     render: (v) => formatCurrency(Number(v ?? 0)),
   },
-  { key: "closed_at", header: "Closed At", sortable: true },
+  { key: "status", header: "Status" },
+  { key: "timestamp", header: "Time", sortable: true },
 ];
+
+function escapeCsvField(value: string): string {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
 
 export default function StrategyDrilldownPage() {
   const params = useParams();
@@ -54,8 +55,17 @@ export default function StrategyDrilldownPage() {
   const { data: equityData, isLoading: equityLoading } = useStrategyEquityCurve(id);
   const { data: trades, isLoading: tradesLoading } = useStrategyTrades(id);
 
-  const m = (metrics ?? {}) as Record<string, unknown>;
-  const strategyName = (strategy as Record<string, unknown>)?.name ?? "Strategy";
+  const strategyName = strategy?.name ?? "Strategy";
+
+  const chartData = (equityData ?? []).map((d: EquityCurvePoint) => ({
+    time: d.timestamp.split("T")[0],
+    value: d.equity,
+  }));
+
+  const drawdownData = (equityData ?? []).map((d: EquityCurvePoint) => ({
+    time: d.timestamp.split("T")[0],
+    value: 0, // TODO: compute drawdown from equity curve
+  }));
 
   const handleExportCsv = async () => {
     try {
@@ -68,9 +78,9 @@ export default function StrategyDrilldownPage() {
 
       const headers = Object.keys(data[0]);
       const csv = [
-        headers.join(","),
+        headers.map(escapeCsvField).join(","),
         ...data.map((row: Record<string, unknown>) =>
-          headers.map((h) => String(row[h] ?? "")).join(",")
+          headers.map((h) => escapeCsvField(String(row[h] ?? ""))).join(",")
         ),
       ].join("\n");
 
@@ -82,41 +92,41 @@ export default function StrategyDrilldownPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      // silently fail
+      // CSV export failed — no user-facing action needed
     }
   };
 
   return (
     <Box>
       <Heading size="lg" mb={6}>
-        {String(strategyName)}
+        {strategyName}
       </Heading>
 
       {/* Row 1: Metric Stat Cards */}
       <SimpleGrid columns={{ base: 1, sm: 2, lg: 3, xl: 6 }} spacing={4} mb={6}>
         <StatCard
           label="Total Return"
-          value={metricsLoading ? "..." : formatCurrency(Number(m.total_return ?? 0))}
+          value={metricsLoading ? "..." : formatCurrency(metrics?.total_return ?? 0)}
         />
         <StatCard
           label="Win Rate"
-          value={metricsLoading ? "..." : formatPercent(Number(m.win_rate ?? 0))}
+          value={metricsLoading ? "..." : formatPercent(metrics?.win_rate ?? 0)}
         />
         <StatCard
           label="Profit Factor"
-          value={metricsLoading ? "..." : formatNumber(Number(m.profit_factor ?? 0))}
+          value={metricsLoading ? "..." : formatNumber(metrics?.profit_factor ?? 0)}
         />
         <StatCard
           label="Sharpe Ratio"
-          value={metricsLoading ? "..." : formatNumber(Number(m.sharpe_ratio ?? 0))}
+          value={metricsLoading ? "..." : formatNumber(metrics?.sharpe_ratio ?? 0)}
         />
         <StatCard
           label="Max Drawdown"
-          value={metricsLoading ? "..." : formatPercent(Number(m.max_drawdown ?? 0))}
+          value={metricsLoading ? "..." : formatPercent(metrics?.max_drawdown ?? 0)}
         />
         <StatCard
           label="Total Trades"
-          value={metricsLoading ? "..." : formatNumber(Number(m.total_trades ?? 0))}
+          value={metricsLoading ? "..." : formatNumber(metrics?.total_trades ?? 0)}
         />
       </SimpleGrid>
 
@@ -127,15 +137,7 @@ export default function StrategyDrilldownPage() {
             Equity Curve
           </Heading>
           <ChartContainer height={300} isLoading={equityLoading}>
-            {() => (
-              <EquityCurve
-                data={(equityData ?? []).map((d) => ({
-                  time: String(d.time ?? ""),
-                  value: Number(d.value ?? 0),
-                }))}
-                height={300}
-              />
-            )}
+            {() => <EquityCurve data={chartData} height={300} />}
           </ChartContainer>
         </Box>
 
@@ -144,15 +146,7 @@ export default function StrategyDrilldownPage() {
             Drawdown
           </Heading>
           <ChartContainer height={300} isLoading={equityLoading}>
-            {() => (
-              <DrawdownChart
-                data={(equityData ?? []).map((d) => ({
-                  time: String(d.time ?? ""),
-                  value: Number(d.drawdown ?? d.value ?? 0),
-                }))}
-                height={300}
-              />
-            )}
+            {() => <DrawdownChart data={drawdownData} height={300} />}
           </ChartContainer>
         </Box>
       </SimpleGrid>
@@ -165,7 +159,7 @@ export default function StrategyDrilldownPage() {
             Export CSV
           </Button>
         </Box>
-        <DataTable<Trade>
+        <DataTable<AnalyticsTrade>
           columns={tradeColumns}
           data={trades ?? []}
           isLoading={tradesLoading}

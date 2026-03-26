@@ -10,14 +10,7 @@ import { EquityCurve } from "@/components/charts/EquityCurve";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { useAnalyticsOverview, useStrategies } from "@/lib/hooks/useApi";
 import { formatCurrency } from "@/lib/utils/formatters";
-
-type Strategy = {
-  id: string;
-  name: string;
-  mode: string;
-  is_active: boolean;
-  [key: string]: unknown;
-};
+import type { Strategy } from "@/lib/api/types";
 
 const strategyColumns: Column<Strategy>[] = [
   { key: "name", header: "Name", sortable: true },
@@ -86,7 +79,7 @@ export default function AnalyticsPage() {
         </Heading>
         <DataTable<Strategy>
           columns={strategyColumns}
-          data={(strategies ?? []) as Strategy[]}
+          data={strategies ?? []}
           isLoading={strategiesLoading}
           emptyMessage="No strategies yet"
           onRowClick={(row) => router.push(`/analytics/strategies/${row.id}`)}

@@ -14,7 +14,9 @@ import { apiClient } from "@/lib/api/client";
 import { formatDate, formatCurrency, formatPercent } from "@/lib/utils/formatters";
 import { POLLING_INTERVALS } from "@/lib/utils/constants";
 
-type BacktestResult = {
+import type { BacktestResult as BacktestResultType } from "@/lib/api/types";
+
+type BacktestDisplay = {
   id: string;
   status: string;
   metrics?: {
@@ -27,14 +29,6 @@ type BacktestResult = {
   };
   equity_curve?: Array<{ time: string; value: number }>;
   trades?: Array<Record<string, unknown>>;
-};
-
-type HistoryEntry = {
-  id: string;
-  created_at: string;
-  strategy_id: string;
-  status: string;
-  [key: string]: unknown;
 };
 
 export default function BacktestingPage() {
@@ -54,7 +48,7 @@ export default function BacktestingPage() {
 
   // Run state
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<BacktestResult | null>(null);
+  const [result, setResult] = useState<BacktestDisplay | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cleanup polling on unmount
@@ -67,7 +61,7 @@ export default function BacktestingPage() {
   const pollBacktest = useCallback((id: string) => {
     pollingRef.current = setInterval(async () => {
       try {
-        const data = await apiClient<BacktestResult>(`/api/v1/backtests/${id}`);
+        const data = await apiClient<BacktestDisplay>(`/api/v1/backtests/${id}`);
         if (data.status === "completed" || data.status === "failed") {
           if (pollingRef.current) clearInterval(pollingRef.current);
           pollingRef.current = null;
@@ -134,7 +128,7 @@ export default function BacktestingPage() {
   const strategyMap: Record<string, string> = {};
   (strategies ?? []).forEach((s) => { strategyMap[s.id] = s.name; });
 
-  const historyColumns: Column<HistoryEntry>[] = [
+  const historyColumns: Column<BacktestResultType>[] = [
     {
       key: "created_at", header: "Date", sortable: true,
       render: (v) => formatDate(String(v ?? "")),
@@ -320,9 +314,9 @@ export default function BacktestingPage() {
           </TabPanel>
 
           <TabPanel px={0}>
-            <DataTable<HistoryEntry>
+            <DataTable<BacktestResultType>
               columns={historyColumns}
-              data={(backtests ?? []) as HistoryEntry[]}
+              data={backtests ?? []}
               emptyMessage="No backtests yet."
             />
           </TabPanel>

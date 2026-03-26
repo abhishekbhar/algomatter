@@ -17,7 +17,7 @@ interface DataTableProps<T> {
   isLoading?: boolean;
 }
 
-export function DataTable<T extends Record<string, unknown>>({
+export function DataTable<T extends object>({
   columns, data, onRowClick, emptyMessage = "No data", isLoading,
 }: DataTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
@@ -27,7 +27,8 @@ export function DataTable<T extends Record<string, unknown>>({
   const sorted = useMemo(() => {
     if (!sortKey) return data;
     return [...data].sort((a, b) => {
-      const av = a[sortKey], bv = b[sortKey];
+      const rec = (x: T) => (x as Record<string, unknown>)[sortKey];
+      const av = rec(a), bv = rec(b);
       if (av == null || bv == null) return 0;
       const cmp = av < bv ? -1 : av > bv ? 1 : 0;
       return sortAsc ? cmp : -cmp;
@@ -62,7 +63,7 @@ export function DataTable<T extends Record<string, unknown>>({
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               _hover={onRowClick ? { bg: hoverBg } : {}}>
               {columns.map((col) => (
-                <Td key={col.key}>{col.render ? col.render(row[col.key], row) : String(row[col.key] ?? "")}</Td>
+                <Td key={col.key}>{col.render ? col.render((row as Record<string, unknown>)[col.key] as T[keyof T], row) : String((row as Record<string, unknown>)[col.key] ?? "")}</Td>
               ))}
             </Tr>
           ))}

@@ -15,17 +15,16 @@ import {
   usePaperSessions,
 } from "@/lib/hooks/useApi";
 import { formatCurrency } from "@/lib/utils/formatters";
+import type { WebhookSignal } from "@/lib/api/types";
 
-type Signal = Record<string, unknown>;
-
-const signalColumns: Column<Signal>[] = [
-  { key: "symbol", header: "Symbol", sortable: true },
-  { key: "action", header: "Action", render: (v) => {
-    const action = String(v ?? "");
-    const variant = action.toLowerCase() === "buy" ? "success" : action.toLowerCase() === "sell" ? "error" : "neutral";
-    return <StatusBadge variant={variant} text={action} />;
-  }},
-  { key: "price", header: "Price", sortable: true, render: (v) => formatCurrency(Number(v ?? 0)) },
+const signalColumns: Column<WebhookSignal>[] = [
+  { key: "status", header: "Status",
+    render: (v) => {
+      const status = String(v ?? "");
+      const variant = status === "passed" ? "success" : status === "blocked" ? "error" : "warning";
+      return <StatusBadge variant={variant} text={status} />;
+    },
+  },
   { key: "received_at", header: "Time", sortable: true, render: (v) => {
     if (!v) return "";
     return new Date(String(v)).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
@@ -105,7 +104,7 @@ export default function DashboardPage() {
       <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6}>
         <Box bg={cardBg} p={4} borderRadius="lg" shadow="sm">
           <Heading size="sm" mb={3}>Recent Signals</Heading>
-          <DataTable<Signal>
+          <DataTable<WebhookSignal>
             columns={signalColumns}
             data={(signals ?? []).slice(0, 10)}
             isLoading={signalsLoading}

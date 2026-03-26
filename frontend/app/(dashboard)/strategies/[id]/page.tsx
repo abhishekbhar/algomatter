@@ -15,26 +15,21 @@ import {
   useStrategyMetrics,
   useStrategyEquityCurve,
 } from "@/lib/hooks/useApi";
-import { formatDate, formatCurrency } from "@/lib/utils/formatters";
+import { formatDate } from "@/lib/utils/formatters";
+import type { WebhookSignal, PaperSession, EquityCurvePoint } from "@/lib/api/types";
 
-type Signal = Record<string, unknown>;
-type Session = Record<string, unknown>;
-
-const signalColumns: Column<Signal>[] = [
-  { key: "symbol", header: "Symbol", sortable: true },
-  {
-    key: "action", header: "Action",
+const signalColumns: Column<WebhookSignal>[] = [
+  { key: "status", header: "Status", sortable: true,
     render: (v) => {
-      const action = String(v ?? "");
-      const variant = action.toLowerCase() === "buy" ? "success" : action.toLowerCase() === "sell" ? "error" : "neutral";
-      return <StatusBadge variant={variant} text={action} />;
+      const status = String(v ?? "");
+      const variant = status === "passed" ? "success" : status === "blocked" ? "error" : "warning";
+      return <StatusBadge variant={variant} text={status} />;
     },
   },
-  { key: "price", header: "Price", sortable: true, render: (v) => formatCurrency(Number(v ?? 0)) },
   { key: "received_at", header: "Time", sortable: true, render: (v) => v ? formatDate(String(v)) : "" },
 ];
 
-const sessionColumns: Column<Session>[] = [
+const sessionColumns: Column<PaperSession>[] = [
   { key: "id", header: "Session ID" },
   {
     key: "status", header: "Status",
@@ -44,7 +39,7 @@ const sessionColumns: Column<Session>[] = [
       return <StatusBadge variant={variant} text={status} />;
     },
   },
-  { key: "created_at", header: "Started", render: (v) => v ? formatDate(String(v)) : "" },
+  { key: "started_at", header: "Started", render: (v) => v ? formatDate(String(v)) : "" },
 ];
 
 export default function StrategyDetailPage() {
@@ -59,7 +54,6 @@ export default function StrategyDetailPage() {
   const { data: metrics } = useStrategyMetrics(id);
   const { data: equityData } = useStrategyEquityCurve(id);
 
-  const strat = strategy as Record<string, unknown> | undefined;
   const strategySignals = (signals ?? []).filter((s) => s.strategy_id === id);
   const strategySessions = (sessions ?? []).filter((s) => s.strategy_id === id);
 
@@ -67,7 +61,7 @@ export default function StrategyDetailPage() {
     return <Center py={20}><Spinner size="xl" /></Center>;
   }
 
-  if (!strat) {
+  if (!strategy) {
     return (
       <Box textAlign="center" py={20}>
         <Text color="gray.500">Strategy not found</Text>
@@ -76,17 +70,22 @@ export default function StrategyDetailPage() {
     );
   }
 
+  const chartData = (equityData ?? []).map((d: EquityCurvePoint) => ({
+    time: d.timestamp.split("T")[0],
+    value: d.equity,
+  }));
+
   return (
     <Box>
       <Flex justify="space-between" align="center" mb={6}>
         <Flex align="center" gap={3}>
-          <Heading size="lg">{String(strat.name ?? "")}</Heading>
+          <Heading size="lg">{strategy.name}</Heading>
           <StatusBadge
-            variant={strat.is_active ? "success" : "neutral"}
-            text={strat.is_active ? "Active" : "Inactive"}
+            variant={strategy.is_active ? "success" : "neutral"}
+            text={strategy.is_active ? "Active" : "Inactive"}
           />
-          <Badge colorScheme={strat.mode === "live" ? "red" : "blue"}>
-            {String(strat.mode ?? "")}
+          <Badge colorScheme={strategy.mode === "live" ? "red" : "blue"}>
+            {strategy.mode}
           </Badge>
         </Flex>
         <Flex gap={3}>
@@ -104,15 +103,15 @@ export default function StrategyDetailPage() {
         <Flex gap={8} wrap="wrap">
           <Box>
             <Text fontSize="sm" color="gray.500">Created</Text>
-            <Text>{strat.created_at ? formatDate(String(strat.created_at)) : "N/A"}</Text>
+            <Text>{strategy.created_at ? formatDate(strategy.created_at) : "N/A"}</Text>
           </Box>
           <Box>
             <Text fontSize="sm" color="gray.500">Broker</Text>
-            <Text>{strat.broker_connection_id ? String(strat.broker_connection_id) : "None"}</Text>
+            <Text>{strategy.broker_connection_id ?? "None"}</Text>
           </Box>
           <Box>
             <Text fontSize="sm" color="gray.500">Rules</Text>
-            <Text>{strat.rules ? JSON.stringify(strat.rules) : "None"}</Text>
+            <Text>{strategy.rules ? JSON.stringify(strategy.rules) : "None"}</Text>
           </Box>
         </Flex>
       </Box>
@@ -126,28 +125,23 @@ export default function StrategyDetailPage() {
         </TabList>
         <TabPanels>
           <TabPanel px={0}>
-            <DataTable<Signal>
+            <DataTable<WebhookSignal>
               columns={signalColumns}
               data={strategySignals}
               emptyMessage="No signals for this strategy"
             />
           </TabPanel>
           <TabPanel px={0}>
-            <DataTable<Session>
+            <DataTable<PaperSession>
               columns={sessionColumns}
               data={strategySessions}
               emptyMessage="No paper trading sessions"
             />
           </TabPanel>
           <TabPanel px={0}>
-            {equityData && (equityData as Array<{ time: string; value: number }>).length > 0 ? (
+            {chartData.length > 0 ? (
               <ChartContainer height={300}>
-                {() => (
-                  <EquityCurve
-                    data={equityData as Array<{ time: string; value: number }>}
-                    height={300}
-                  />
-                )}
+                {() => <EquityCurve data={chartData} height={300} />}
               </ChartContainer>
             ) : (
               <Text color="gray.500" textAlign="center" py={8}>

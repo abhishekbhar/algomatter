@@ -43,14 +43,13 @@ export default function EditStrategyPage() {
 
   useEffect(() => {
     if (!strategy) return;
-    const s = strategy as Record<string, unknown>;
-    const rules = (s.rules ?? {}) as Record<string, unknown>;
+    const rules = (strategy.rules ?? {}) as Record<string, unknown>;
     setForm({
-      name: String(s.name ?? ""),
-      broker_connection_id: String(s.broker_connection_id ?? ""),
-      mode: String(s.mode ?? "paper"),
-      is_active: !!s.is_active,
-      mapping_template: s.mapping_template ? JSON.stringify(s.mapping_template, null, 2) : "",
+      name: strategy.name ?? "",
+      broker_connection_id: strategy.broker_connection_id ?? "",
+      mode: strategy.mode ?? "paper",
+      is_active: strategy.is_active,
+      mapping_template: strategy.mapping_template ? JSON.stringify(strategy.mapping_template, null, 2) : "",
       symbol_whitelist: Array.isArray(rules.symbol_whitelist)
         ? (rules.symbol_whitelist as string[]).join(", ")
         : "",

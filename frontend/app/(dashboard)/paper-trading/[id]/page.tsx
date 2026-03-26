@@ -13,27 +13,7 @@ import { EquityCurve } from "@/components/charts/EquityCurve";
 import { usePaperSession } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatCurrency, formatDate } from "@/lib/utils/formatters";
-
-type Position = {
-  symbol: string;
-  side: string;
-  quantity: number;
-  avg_entry_price: number;
-  unrealized_pnl: number;
-  [key: string]: unknown;
-};
-
-type Trade = {
-  id: string;
-  timestamp: string;
-  symbol: string;
-  action: string;
-  quantity: number;
-  fill_price: number;
-  pnl: number;
-  commission: number;
-  [key: string]: unknown;
-};
+import type { PaperPosition, PaperTrade } from "@/lib/api/types";
 
 export default function PaperTradingDetailPage() {
   const params = useParams();
@@ -44,20 +24,20 @@ export default function PaperTradingDetailPage() {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [stopping, setStopping] = useState(false);
 
-  const sessionData = session as Record<string, unknown> | undefined;
-  const positions = (sessionData?.positions ?? []) as Position[];
-  const trades = (sessionData?.trades ?? []) as Trade[];
+  const positions = session?.positions ?? [];
+  const trades = session?.trades ?? [];
 
   const equityData = useMemo(() => {
     if (!trades.length) return [];
-    let equity = Number(sessionData?.initial_capital ?? 100000);
+    let equity = Number(session?.initial_capital ?? 100000);
     return trades
-      .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+      .filter((t) => t.executed_at != null)
+      .sort((a, b) => (a.executed_at ?? "").localeCompare(b.executed_at ?? ""))
       .map((t) => {
-        equity += (t.pnl ?? 0) - (t.commission ?? 0);
-        return { time: t.timestamp.split("T")[0], value: equity };
+        equity += Number(t.realized_pnl ?? 0) - Number(t.commission ?? 0);
+        return { time: (t.executed_at ?? "").split("T")[0], value: equity };
       });
-  }, [trades, sessionData?.initial_capital]);
+  }, [trades, session?.initial_capital]);
 
   const handleStop = async () => {
     setStopping(true);
@@ -73,16 +53,16 @@ export default function PaperTradingDetailPage() {
     }
   };
 
-  if (isLoading || !sessionData) {
+  if (isLoading || !session) {
     return <Box py={8} textAlign="center"><Spinner /></Box>;
   }
 
-  const initialCapital = Number(sessionData.initial_capital ?? 0);
-  const currentEquity = Number(sessionData.current_balance ?? 0);
-  const realizedPnl = trades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
-  const unrealizedPnl = positions.reduce((sum, p) => sum + (p.unrealized_pnl ?? 0), 0);
+  const initialCapital = Number(session.initial_capital ?? 0);
+  const currentEquity = Number(session.current_balance ?? 0);
+  const realizedPnl = trades.reduce((sum, t) => sum + Number(t.realized_pnl ?? 0), 0);
+  const unrealizedPnl = positions.reduce((sum, p) => sum + Number(p.unrealized_pnl ?? 0), 0);
 
-  const positionColumns: Column<Position>[] = [
+  const positionColumns: Column<PaperPosition>[] = [
     { key: "symbol", header: "Symbol" },
     {
       key: "side", header: "Side",
@@ -105,10 +85,10 @@ export default function PaperTradingDetailPage() {
     },
   ];
 
-  const tradeColumns: Column<Trade>[] = [
+  const tradeColumns: Column<PaperTrade>[] = [
     {
-      key: "timestamp", header: "Time", sortable: true,
-      render: (v) => formatDate(String(v ?? "")),
+      key: "executed_at", header: "Time", sortable: true,
+      render: (v) => v ? formatDate(String(v)) : "",
     },
     { key: "symbol", header: "Symbol" },
     {
@@ -124,9 +104,9 @@ export default function PaperTradingDetailPage() {
       render: (v) => formatCurrency(Number(v)),
     },
     {
-      key: "pnl", header: "P&L",
+      key: "realized_pnl", header: "P&L",
       render: (v) => {
-        const val = Number(v);
+        const val = Number(v ?? 0);
         return <Text color={val >= 0 ? "green.500" : "red.500"}>{formatCurrency(val)}</Text>;
       },
     },
@@ -140,7 +120,7 @@ export default function PaperTradingDetailPage() {
     <Box>
       <Flex justify="space-between" align="center" mb={6}>
         <Heading size="lg">Session Detail</Heading>
-        {sessionData.status === "active" && (
+        {session.status === "active" && (
           <Button size="sm" colorScheme="red" onClick={onOpen}>Stop Session</Button>
         )}
       </Flex>
@@ -160,14 +140,14 @@ export default function PaperTradingDetailPage() {
         </TabList>
         <TabPanels>
           <TabPanel px={0}>
-            <DataTable<Position>
+            <DataTable<PaperPosition>
               columns={positionColumns}
               data={positions}
               emptyMessage="No open positions."
             />
           </TabPanel>
           <TabPanel px={0}>
-            <DataTable<Trade>
+            <DataTable<PaperTrade>
               columns={tradeColumns}
               data={trades}
               emptyMessage="No trades yet."

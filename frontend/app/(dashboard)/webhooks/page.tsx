@@ -10,16 +10,7 @@ import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { useWebhookConfig, useWebhookSignals } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatDate } from "@/lib/utils/formatters";
-
-type Signal = {
-  id: string;
-  received_at: string;
-  strategy_name: string;
-  symbol: string;
-  action: string;
-  result: string;
-  [key: string]: unknown;
-};
+import type { WebhookSignal } from "@/lib/api/types";
 
 export default function WebhooksPage() {
   const toast = useToast();
@@ -60,26 +51,23 @@ export default function WebhooksPage() {
     return "neutral";
   };
 
-  const columns: Column<Signal>[] = [
+  const columns: Column<WebhookSignal>[] = [
     {
       key: "received_at", header: "Time", sortable: true,
       render: (v) => formatDate(String(v ?? "")),
     },
-    { key: "strategy_name", header: "Strategy" },
-    { key: "symbol", header: "Symbol" },
+    { key: "strategy_id", header: "Strategy" },
     {
-      key: "action", header: "Action",
+      key: "status", header: "Status",
       render: (v) => {
-        const action = String(v ?? "");
-        return <StatusBadge variant={actionVariant(action)} text={action.toUpperCase()} />;
+        const status = String(v ?? "");
+        const variant = status === "passed" ? "success" : status === "blocked" ? "error" : "warning";
+        return <StatusBadge variant={variant} text={status} />;
       },
     },
     {
-      key: "result", header: "Result",
-      render: (v) => {
-        const result = String(v ?? "");
-        return <StatusBadge variant={resultVariant(result)} text={result} />;
-      },
+      key: "error_message", header: "Error",
+      render: (v) => v ? String(v) : "\u2014",
     },
   ];
 
@@ -123,9 +111,9 @@ export default function WebhooksPage() {
           <Heading size="md">Signal Log</Heading>
         </CardHeader>
         <CardBody>
-          <DataTable<Signal>
+          <DataTable<WebhookSignal>
             columns={columns}
-            data={(signals ?? []) as Signal[]}
+            data={signals ?? []}
             isLoading={signalsLoading}
             emptyMessage="No signals received yet."
           />
