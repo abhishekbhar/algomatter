@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import time
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from urllib.parse import urlencode
 
@@ -41,6 +42,15 @@ class BinanceTestnetBroker(BrokerAdapter):
     Parameters are injected via :meth:`authenticate` rather than ``__init__``
     so that the broker can be constructed before credentials are available.
     """
+
+    _STATUS_MAP: dict[str, str] = {
+        "FILLED": "filled",
+        "NEW": "open",
+        "PARTIALLY_FILLED": "open",
+        "CANCELED": "cancelled",
+        "REJECTED": "rejected",
+        "EXPIRED": "cancelled",
+    }
 
     def __init__(self) -> None:
         self._api_key: str = ""
@@ -190,17 +200,113 @@ class BinanceTestnetBroker(BrokerAdapter):
         self._account_cache = None
 
     # ------------------------------------------------------------------
-    # Orders (placeholder)
+    # Orders
     # ------------------------------------------------------------------
 
     async def place_order(self, order: OrderRequest) -> OrderResponse:
-        raise NotImplementedError("place_order not yet implemented for BinanceTestnetBroker")
+        """Place a spot order on Binance Testnet.
+
+        Supports MARKET, LIMIT, SL (stop-loss limit), and SL-M (stop-loss
+        market) order types.
+        """
+        params: dict[str, Any] = {
+            "symbol": order.symbol,
+            "side": order.action,
+            "quantity": str(order.quantity),
+        }
+
+        if order.order_type == "MARKET":
+            params["type"] = "MARKET"
+        elif order.order_type == "LIMIT":
+            params["type"] = "LIMIT"
+            params["price"] = str(order.price)
+            params["timeInForce"] = "GTC"
+        elif order.order_type == "SL":
+            params["type"] = "STOP_LOSS_LIMIT"
+            params["stopPrice"] = str(order.trigger_price)
+            params["price"] = str(order.price)
+            params["timeInForce"] = "GTC"
+        elif order.order_type == "SL-M":
+            params["type"] = "STOP_LOSS"
+            params["stopPrice"] = str(order.trigger_price)
+
+        try:
+            resp = await self._post("/api/v3/order", params=params, signed=True)
+        except RuntimeError as exc:
+            return OrderResponse(
+                order_id="",
+                status="rejected",
+                message=str(exc),
+            )
+
+        data = resp.json()
+        order_id = str(data["orderId"])
+
+        # Remember order_id → symbol for later cancel / status queries
+        self._order_symbols[order_id] = order.symbol
+
+        executed_qty = Decimal(data.get("executedQty", "0"))
+        cum_quote_qty = Decimal(data.get("cummulativeQuoteQty", "0"))
+        fill_price: Decimal | None = None
+        if executed_qty > 0:
+            fill_price = cum_quote_qty / executed_qty
+
+        status = self._STATUS_MAP.get(data["status"], "open")
+
+        return OrderResponse(
+            order_id=order_id,
+            status=status,  # type: ignore[arg-type]
+            fill_price=fill_price,
+            fill_quantity=executed_qty if executed_qty > 0 else None,
+        )
 
     async def cancel_order(self, order_id: str) -> bool:
-        raise NotImplementedError("cancel_order not yet implemented for BinanceTestnetBroker")
+        """Cancel an open order on Binance Testnet."""
+        symbol = self._order_symbols.get(order_id)
+        if symbol is None:
+            raise ValueError(
+                f"Unknown order_id {order_id!r}; was it placed via this broker instance?"
+            )
+
+        await self._delete(
+            "/api/v3/order",
+            params={"symbol": symbol, "orderId": order_id},
+            signed=True,
+        )
+        return True
 
     async def get_order_status(self, order_id: str) -> OrderStatus:
-        raise NotImplementedError("get_order_status not yet implemented for BinanceTestnetBroker")
+        """Query the current status of an order on Binance Testnet."""
+        symbol = self._order_symbols.get(order_id)
+        if symbol is None:
+            raise ValueError(
+                f"Unknown order_id {order_id!r}; was it placed via this broker instance?"
+            )
+
+        resp = await self._get(
+            "/api/v3/order",
+            params={"symbol": symbol, "orderId": order_id},
+            signed=True,
+        )
+        data = resp.json()
+
+        executed_qty = Decimal(data.get("executedQty", "0"))
+        cum_quote_qty = Decimal(data.get("cummulativeQuoteQty", "0"))
+        orig_qty = Decimal(data.get("origQty", "0"))
+
+        fill_price: Decimal | None = None
+        if executed_qty > 0:
+            fill_price = cum_quote_qty / executed_qty
+
+        status = self._STATUS_MAP.get(data["status"], "open")
+
+        return OrderStatus(
+            order_id=order_id,
+            status=status,  # type: ignore[arg-type]
+            fill_price=fill_price,
+            fill_quantity=executed_qty if executed_qty > 0 else None,
+            pending_quantity=orig_qty - executed_qty if orig_qty > executed_qty else None,
+        )
 
     # ------------------------------------------------------------------
     # Portfolio (placeholder)
