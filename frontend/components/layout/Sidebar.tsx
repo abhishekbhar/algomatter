@@ -12,6 +12,7 @@ import {
   MdAnalytics,
   MdSettings,
   MdCode,
+  MdTrendingUp,
   MdChevronLeft,
   MdChevronRight,
 } from "react-icons/md";
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { icon: MdDashboard, label: "Dashboard", href: "/" },
   { icon: MdShowChart, label: "Webhook Strategies", href: "/strategies" },
   { icon: MdCode, label: "Hosted Strategies", href: "/strategies/hosted" },
+  { icon: MdTrendingUp, label: "Live Trading", href: "/live-trading" },
   { icon: MdWebhook, label: "Webhooks", href: "/webhooks" },
   { icon: MdAccountBalance, label: "Brokers", href: "/brokers" },
   { icon: MdPlayArrow, label: "Paper Trading", href: "/paper-trading" },
@@ -73,7 +75,8 @@ export function Sidebar() {
             href={item.href}
             isActive={
               pathname === item.href ||
-              (item.href !== "/" && pathname.startsWith(item.href))
+              (item.href !== "/" && pathname.startsWith(item.href) &&
+                !NAV_ITEMS.some((other) => other.href !== item.href && other.href.startsWith(item.href) && pathname.startsWith(other.href)))
             }
             isCollapsed={isCollapsed}
           />
