@@ -10,6 +10,12 @@ interface AnimatedCounterProps {
   duration?: number;
 }
 
+function getDecimalPlaces(n: number): number {
+  const s = n.toString();
+  const dot = s.indexOf(".");
+  return dot === -1 ? 0 : s.length - dot - 1;
+}
+
 export function AnimatedCounter({
   target,
   prefix = "",
@@ -19,6 +25,7 @@ export function AnimatedCounter({
   const ref = useRef<HTMLSpanElement>(null);
   const isInView = useInView(ref, { once: true });
   const [count, setCount] = useState(0);
+  const decimals = getDecimalPlaces(target);
 
   useEffect(() => {
     if (!isInView) return;
@@ -30,16 +37,24 @@ export function AnimatedCounter({
         setCount(target);
         clearInterval(timer);
       } else {
-        setCount(Math.floor(start));
+        setCount(
+          decimals > 0
+            ? parseFloat(start.toFixed(decimals))
+            : Math.floor(start)
+        );
       }
     }, 1000 / 60);
     return () => clearInterval(timer);
-  }, [isInView, target, duration]);
+  }, [isInView, target, duration, decimals]);
+
+  const display = decimals > 0
+    ? count.toFixed(decimals)
+    : count.toLocaleString();
 
   return (
     <span ref={ref} className="tabular-nums">
       {prefix}
-      {count.toLocaleString()}
+      {display}
       {suffix}
     </span>
   );

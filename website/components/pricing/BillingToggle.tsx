@@ -14,6 +14,8 @@ export function BillingToggle({ annual, onChange }: BillingToggleProps) {
       <button
         onClick={() => onChange(!annual)}
         className="relative h-7 w-12 rounded-full bg-brand-indigo/20 transition-colors"
+        role="switch"
+        aria-checked={annual}
         aria-label="Toggle billing period"
       >
         <span

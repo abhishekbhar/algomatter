@@ -1,11 +1,12 @@
 "use client";
 
 import { motion, useInView } from "framer-motion";
-import { useRef } from "react";
+import { useId, useRef } from "react";
 
 export function EquityCurve({ className = "" }: { className?: string }) {
   const ref = useRef<SVGSVGElement>(null);
   const isInView = useInView(ref, { once: true });
+  const gradientId = useId();
 
   const curvePath =
     "M0,120 Q50,110 100,100 T200,80 T300,60 T400,45 T500,30 T600,15";
@@ -19,14 +20,14 @@ export function EquityCurve({ className = "" }: { className?: string }) {
       preserveAspectRatio="none"
     >
       <defs>
-        <linearGradient id="curveGrad" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
           <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
         </linearGradient>
       </defs>
       <motion.path
         d={areaPath}
-        fill="url(#curveGrad)"
+        fill={`url(#${gradientId})`}
         initial={{ opacity: 0 }}
         animate={isInView ? { opacity: 1 } : {}}
         transition={{ duration: 1, delay: 0.5 }}
