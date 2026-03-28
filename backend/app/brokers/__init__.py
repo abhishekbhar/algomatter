@@ -10,6 +10,8 @@ from app.brokers.base import (
     OHLCV,
 )
 from app.brokers.simulated import SimulatedBroker
+from app.brokers.binance_testnet import BinanceTestnetBroker
+from app.brokers.factory import get_broker
 
 __all__ = [
     "BrokerAdapter",
@@ -22,4 +24,6 @@ __all__ = [
     "Quote",
     "OHLCV",
     "SimulatedBroker",
+    "BinanceTestnetBroker",
+    "get_broker",
 ]
