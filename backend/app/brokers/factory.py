@@ -22,5 +22,13 @@ async def get_broker(broker_type: str, credentials: dict) -> BrokerAdapter:
                 await broker.close()
                 raise RuntimeError("Failed to authenticate with Binance testnet")
             return broker
+        case "exchange1":
+            from app.brokers.exchange1 import Exchange1Broker
+            broker = Exchange1Broker()
+            authenticated = await broker.authenticate(credentials)
+            if not authenticated:
+                await broker.close()
+                raise RuntimeError("Failed to authenticate with Exchange1")
+            return broker
         case _:
             raise ValueError(f"Unknown broker type: {broker_type}")
