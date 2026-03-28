@@ -1,11 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { Index as FlexIndex } from "flexsearch";
 import { docsManifest } from "@/lib/docs-manifest";
 
-const allDocs = docsManifest.flatMap((section) =>
+interface SearchableDoc {
+  title: string;
+  slug: string;
+  section: string;
+}
+
+const allDocs: SearchableDoc[] = docsManifest.flatMap((section) =>
   section.entries.map((entry) => ({
     ...entry,
     section: section.title,
@@ -15,26 +22,49 @@ const allDocs = docsManifest.flatMap((section) =>
 export function SearchDialog() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchableDoc[]>(allDocs);
   const router = useRouter();
+  const indexRef = useRef<FlexIndex | null>(null);
 
-  const filtered = query
-    ? allDocs.filter(
-        (d) =>
-          d.title.toLowerCase().includes(query.toLowerCase()) ||
-          d.section.toLowerCase().includes(query.toLowerCase())
-      )
-    : allDocs;
+  // Build flexsearch index on mount
+  useEffect(() => {
+    const index = new FlexIndex({
+      tokenize: "forward",
+      resolution: 9,
+    });
+    allDocs.forEach((doc, i) => {
+      index.add(i, `${doc.title} ${doc.section}`);
+    });
+    indexRef.current = index;
+  }, []);
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setOpen((prev) => !prev);
-      }
-      if (e.key === "Escape") setOpen(false);
-    },
-    []
-  );
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults(allDocs);
+      return;
+    }
+    if (!indexRef.current) {
+      // Fallback to simple filter if index not ready
+      setResults(
+        allDocs.filter(
+          (d) =>
+            d.title.toLowerCase().includes(query.toLowerCase()) ||
+            d.section.toLowerCase().includes(query.toLowerCase())
+        )
+      );
+      return;
+    }
+    const ids = indexRef.current.search(query, { limit: 10 });
+    setResults(ids.map((id) => allDocs[id as number]));
+  }, [query]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      e.preventDefault();
+      setOpen((prev) => !prev);
+    }
+    if (e.key === "Escape") setOpen(false);
+  }, []);
 
   useEffect(() => {
     document.addEventListener("keydown", handleKeyDown);
@@ -87,12 +117,12 @@ export function SearchDialog() {
                 className="w-full border-b border-brand-indigo/10 bg-transparent px-4 py-3 text-sm text-slate-heading outline-none placeholder:text-slate-muted"
               />
               <div className="max-h-72 overflow-y-auto p-2">
-                {filtered.length === 0 ? (
+                {results.length === 0 ? (
                   <p className="px-3 py-4 text-sm text-slate-muted text-center">
                     No results found
                   </p>
                 ) : (
-                  filtered.map((doc) => (
+                  results.map((doc) => (
                     <button
                       key={doc.slug}
                       onClick={() => navigate(doc.slug)}

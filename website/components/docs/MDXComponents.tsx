@@ -1,4 +1,5 @@
 import type { MDXComponents } from "mdx/types";
+import { CodeBlock } from "./CodeBlock";
 
 export const mdxComponents: MDXComponents = {
   h1: (props) => (
@@ -16,12 +17,16 @@ export const mdxComponents: MDXComponents = {
   ul: (props) => <ul className="list-disc pl-5 mb-4 space-y-1 text-sm text-slate-body" {...props} />,
   ol: (props) => <ol className="list-decimal pl-5 mb-4 space-y-1 text-sm text-slate-body" {...props} />,
   li: (props) => <li className="leading-relaxed" {...props} />,
-  code: (props) => (
-    <code className="rounded bg-brand-indigo/10 px-1.5 py-0.5 text-xs font-mono text-brand-lavender" {...props} />
-  ),
-  pre: (props) => (
-    <pre className="rounded-lg bg-[#0a0a1a] p-4 overflow-x-auto mb-4 text-xs leading-relaxed" {...props} />
-  ),
+  code: (props) => {
+    // When inside a <pre>, don't add inline code styling
+    if (props.className?.includes("language-")) {
+      return <code {...props} />;
+    }
+    return (
+      <code className="rounded bg-brand-indigo/10 px-1.5 py-0.5 text-xs font-mono text-brand-lavender" {...props} />
+    );
+  },
+  pre: CodeBlock,
   a: (props) => (
     <a className="text-brand-lavender hover:underline" {...props} />
   ),
