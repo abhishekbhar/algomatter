@@ -266,3 +266,96 @@ async def test_dispatch_orders_rejected_creates_trade_record(db_session):
     )
     trade = trade_result.scalar_one()
     assert trade.status == "rejected"
+
+
+## ─── Read-only trade endpoint tests ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_trades_endpoint(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session)
+
+    dep_id = uuid.UUID(deployment["id"])
+    result = await db_session.execute(
+        select(StrategyDeployment).where(StrategyDeployment.id == dep_id)
+    )
+    dep = result.scalar_one()
+
+    trade = DeploymentTrade(
+        tenant_id=dep.tenant_id, deployment_id=dep.id, order_id="t1",
+        action="BUY", quantity=1.0, order_type="MARKET", status="filled", is_manual=False,
+    )
+    db_session.add(trade)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/deployments/{deployment['id']}/trades",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["trades"][0]["order_id"] == "t1"
+    assert "strategy_name" in data["trades"][0]
+    assert "symbol" in data["trades"][0]
+
+
+@pytest.mark.asyncio
+async def test_get_position_endpoint(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session)
+
+    dep_id = uuid.UUID(deployment["id"])
+    result = await db_session.execute(
+        select(StrategyDeployment).where(StrategyDeployment.id == dep_id)
+    )
+    dep = result.scalar_one()
+
+    # Update the existing DeploymentState created during deployment creation
+    state_result = await db_session.execute(
+        select(DeploymentState).where(DeploymentState.deployment_id == dep.id)
+    )
+    state = state_result.scalar_one()
+    state.position = {"quantity": 1.0, "avg_entry_price": 100.0, "unrealized_pnl": 5.0}
+    state.portfolio = {"balance": 10000, "equity": 10005, "available_margin": 9000}
+    state.open_orders = [{"id": "o1"}]
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/deployments/{deployment['id']}/position",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["position"]["quantity"] == 1.0
+    assert data["open_orders_count"] == 1
+    assert len(data["open_orders"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_recent_trades_endpoint(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session)
+
+    dep_id = uuid.UUID(deployment["id"])
+    result = await db_session.execute(
+        select(StrategyDeployment).where(StrategyDeployment.id == dep_id)
+    )
+    dep = result.scalar_one()
+
+    trade = DeploymentTrade(
+        tenant_id=dep.tenant_id, deployment_id=dep.id, order_id="rt1",
+        action="BUY", quantity=1.0, order_type="MARKET", status="filled", is_manual=False,
+    )
+    db_session.add(trade)
+    await db_session.commit()
+
+    resp = await client.get(
+        "/api/v1/deployments/recent-trades?limit=10",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] >= 1
+    assert len(data["trades"]) >= 1

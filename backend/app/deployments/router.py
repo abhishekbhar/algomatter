@@ -4,12 +4,15 @@ Endpoints:
     POST   /api/v1/hosted-strategies/{strategy_id}/deployments  Create deployment
     GET    /api/v1/hosted-strategies/{strategy_id}/deployments  List strategy deployments
     GET    /api/v1/deployments                                  List all user deployments
+    GET    /api/v1/deployments/recent-trades                    Recent trades (cross-deployment)
     GET    /api/v1/deployments/{deployment_id}                  Get deployment detail
     POST   /api/v1/deployments/{deployment_id}/pause            Pause deployment
     POST   /api/v1/deployments/{deployment_id}/resume           Resume deployment
     POST   /api/v1/deployments/{deployment_id}/stop             Stop deployment
     POST   /api/v1/deployments/stop-all                         Stop all active deployments
     POST   /api/v1/deployments/{deployment_id}/promote          Promote deployment
+    GET    /api/v1/deployments/{deployment_id}/trades           Get deployment trades
+    GET    /api/v1/deployments/{deployment_id}/position         Get deployment position
     GET    /api/v1/deployments/{deployment_id}/results          Get backtest results
     GET    /api/v1/deployments/{deployment_id}/orders           Get open orders
     GET    /api/v1/deployments/{deployment_id}/logs             Get logs (paginated)
@@ -30,6 +33,7 @@ from app.auth.deps import get_current_user, get_tenant_session
 from app.db.models import (
     DeploymentLog,
     DeploymentState,
+    DeploymentTrade,
     StrategyCode,
     StrategyDeployment,
     StrategyResult,
@@ -40,7 +44,11 @@ from app.deployments.schemas import (
     DeploymentLogsResponse,
     DeploymentResponse,
     DeploymentResultResponse,
+    DeploymentTradeResponse,
+    PositionResponse,
     PromoteRequest,
+    RecentTradesResponse,
+    TradesResponse,
 )
 from app.deployments.service import (
     check_deployment_limits,
@@ -77,6 +85,29 @@ def _deployment_to_response(dep: StrategyDeployment) -> DeploymentResponse:
         created_at=dep.created_at.isoformat() if dep.created_at else "",
         started_at=dep.started_at.isoformat() if dep.started_at else None,
         stopped_at=dep.stopped_at.isoformat() if dep.stopped_at else None,
+    )
+
+
+def _trade_to_response(trade: DeploymentTrade, strategy_name: str, symbol: str) -> DeploymentTradeResponse:
+    return DeploymentTradeResponse(
+        id=str(trade.id),
+        deployment_id=str(trade.deployment_id),
+        order_id=trade.order_id,
+        broker_order_id=trade.broker_order_id,
+        action=trade.action,
+        quantity=float(trade.quantity),
+        order_type=trade.order_type,
+        price=float(trade.price) if trade.price is not None else None,
+        trigger_price=float(trade.trigger_price) if trade.trigger_price is not None else None,
+        fill_price=float(trade.fill_price) if trade.fill_price is not None else None,
+        fill_quantity=float(trade.fill_quantity) if trade.fill_quantity is not None else None,
+        status=trade.status,
+        is_manual=trade.is_manual,
+        realized_pnl=float(trade.realized_pnl) if trade.realized_pnl is not None else None,
+        created_at=trade.created_at.isoformat() if trade.created_at else "",
+        filled_at=trade.filled_at.isoformat() if trade.filled_at else None,
+        strategy_name=strategy_name,
+        symbol=symbol,
     )
 
 
@@ -254,6 +285,56 @@ async def list_all_deployments(
     result = await session.execute(query)
     deployments = result.scalars().all()
     return [_deployment_to_response(d) for d in deployments]
+
+
+# ---------------------------------------------------------------------------
+# Recent trades (cross-deployment) — MUST be before /{deployment_id} routes
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/api/v1/deployments/recent-trades",
+    response_model=RecentTradesResponse,
+)
+async def get_recent_trades(
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    count_result = await session.execute(
+        select(func.count()).where(DeploymentTrade.tenant_id == tenant_id)
+    )
+    total = count_result.scalar() or 0
+
+    result = await session.execute(
+        select(DeploymentTrade)
+        .where(DeploymentTrade.tenant_id == tenant_id)
+        .order_by(DeploymentTrade.created_at.desc())
+        .limit(limit)
+    )
+    trades = result.scalars().all()
+
+    # Batch-load deployment info for strategy names
+    dep_ids = {t.deployment_id for t in trades}
+    if dep_ids:
+        dep_result = await session.execute(
+            select(StrategyDeployment)
+            .where(StrategyDeployment.id.in_(dep_ids))
+            .options(selectinload(StrategyDeployment.strategy_code))
+        )
+        deps = {d.id: d for d in dep_result.scalars().all()}
+    else:
+        deps = {}
+
+    trade_responses = []
+    for t in trades:
+        dep = deps.get(t.deployment_id)
+        name = dep.strategy_code.name if dep and dep.strategy_code else ""
+        symbol = dep.symbol if dep else ""
+        trade_responses.append(_trade_to_response(t, name, symbol))
+
+    return RecentTradesResponse(trades=trade_responses, total=total)
 
 
 # ---------------------------------------------------------------------------
@@ -557,6 +638,101 @@ async def promote_deployment(
     new_deployment = result.scalar_one()
 
     return _deployment_to_response(new_deployment)
+
+
+# ---------------------------------------------------------------------------
+# Get deployment trades (paginated)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/api/v1/deployments/{deployment_id}/trades",
+    response_model=TradesResponse,
+)
+async def get_deployment_trades(
+    deployment_id: uuid.UUID,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    is_manual: bool | None = Query(default=None),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    result = await session.execute(
+        select(StrategyDeployment)
+        .where(StrategyDeployment.id == deployment_id, StrategyDeployment.tenant_id == tenant_id)
+        .options(selectinload(StrategyDeployment.strategy_code))
+    )
+    dep = result.scalar_one_or_none()
+    if not dep:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+
+    query = select(DeploymentTrade).where(
+        DeploymentTrade.deployment_id == deployment_id,
+        DeploymentTrade.tenant_id == tenant_id,
+    )
+    if is_manual is not None:
+        query = query.where(DeploymentTrade.is_manual == is_manual)
+
+    count_result = await session.execute(select(func.count()).select_from(query.subquery()))
+    total = count_result.scalar() or 0
+
+    result = await session.execute(
+        query.order_by(DeploymentTrade.created_at.desc()).offset(offset).limit(limit)
+    )
+    trades = result.scalars().all()
+
+    strategy_name = dep.strategy_code.name if dep.strategy_code else ""
+    return TradesResponse(
+        trades=[_trade_to_response(t, strategy_name, dep.symbol) for t in trades],
+        total=total, offset=offset, limit=limit,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Get deployment position
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/api/v1/deployments/{deployment_id}/position",
+    response_model=PositionResponse,
+)
+async def get_deployment_position(
+    deployment_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    result = await session.execute(
+        select(StrategyDeployment).where(
+            StrategyDeployment.id == deployment_id, StrategyDeployment.tenant_id == tenant_id
+        )
+    )
+    dep = result.scalar_one_or_none()
+    if not dep:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+
+    state = await session.get(DeploymentState, deployment_id)
+
+    pnl_result = await session.execute(
+        select(func.coalesce(func.sum(DeploymentTrade.realized_pnl), 0)).where(
+            DeploymentTrade.deployment_id == deployment_id,
+            DeploymentTrade.tenant_id == tenant_id,
+            DeploymentTrade.realized_pnl.isnot(None),
+        )
+    )
+    total_realized_pnl = float(pnl_result.scalar() or 0)
+
+    open_orders = state.open_orders if state and state.open_orders else []
+    return PositionResponse(
+        deployment_id=str(deployment_id),
+        position=state.position if state else None,
+        portfolio=state.portfolio if state else {},
+        open_orders=open_orders,
+        open_orders_count=len(open_orders),
+        total_realized_pnl=total_realized_pnl,
+    )
 
 
 # ---------------------------------------------------------------------------
