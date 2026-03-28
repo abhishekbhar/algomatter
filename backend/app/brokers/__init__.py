@@ -11,6 +11,7 @@ from app.brokers.base import (
 )
 from app.brokers.simulated import SimulatedBroker
 from app.brokers.binance_testnet import BinanceTestnetBroker
+from app.brokers.exchange1 import Exchange1Broker
 from app.brokers.factory import get_broker
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "OHLCV",
     "SimulatedBroker",
     "BinanceTestnetBroker",
+    "Exchange1Broker",
     "get_broker",
 ]
