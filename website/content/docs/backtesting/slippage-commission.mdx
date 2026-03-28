@@ -1,8 +1,119 @@
 ---
-title: "Slippage & Commission"
-description: "Slippage & Commission — content coming soon"
+title: "Slippage & Commission Modeling"
+description: "How Algomatter simulates slippage and trading commissions for realistic backtests"
 ---
 
-# Slippage & Commission
+# Slippage & Commission Modeling
 
-Content coming soon.
+A backtest is only as useful as its assumptions. If you ignore execution costs, your results will be overly optimistic. Algomatter lets you configure slippage and commission settings so your backtests reflect what would actually happen on a real exchange.
+
+## What is slippage?
+
+Slippage is the difference between the expected price of a trade and the actual execution price. It happens because:
+
+- **Order book depth:** Large orders may eat through multiple price levels.
+- **Market volatility:** Prices can move between the moment you decide to trade and when the order fills.
+- **Latency:** Network delays mean the price you see is slightly stale.
+
+In live trading, slippage is unavoidable. In backtesting, we simulate it to keep results honest.
+
+## Slippage models in Algomatter
+
+You can configure slippage in the backtest settings. Three models are available:
+
+### No slippage
+
+Orders fill at the exact candle close price. This is the most optimistic scenario and not recommended for serious evaluation.
+
+### Fixed slippage
+
+A fixed dollar (or quote currency) amount is added to buys and subtracted from sells.
+
+**Example:** With a fixed slippage of $1.00 on BTC/USDT, a buy at $60,000 would fill at $60,001 and a sell at $60,000 would fill at $59,999.
+
+Best for quick estimates or when you want a simple, predictable cost model.
+
+### Percentage slippage (recommended)
+
+A percentage of the trade price is applied as slippage. This scales with the asset price, making it more realistic.
+
+**Example:** With 0.05% slippage on a $60,000 BTC buy:
+
+```
+Slippage = $60,000 * 0.0005 = $30
+Fill price = $60,030
+```
+
+| Slippage setting | Scenario                                    |
+|------------------|----------------------------------------------|
+| 0.01%            | Very liquid pairs, small orders              |
+| 0.05%            | Default — realistic for most crypto pairs     |
+| 0.10%            | Less liquid alts or larger order sizes       |
+| 0.20%+           | Low-liquidity pairs or stress testing        |
+
+> For a realistic baseline, we recommend 0.05% slippage. This is the default in Algomatter.
+
+## Commission rates
+
+Commissions are the fees charged by the exchange on each trade. Algomatter simulates these as a percentage of the trade value.
+
+### Default exchange rates
+
+| Exchange   | Maker fee | Taker fee | Algomatter default |
+|------------|-----------|-----------|-------------------|
+| Binance    | 0.10%     | 0.10%     | 0.10%             |
+| Exchange1  | 0.10%     | 0.10%     | 0.10%             |
+| Bybit      | 0.10%     | 0.10%     | 0.10%             |
+| OKX        | 0.08%     | 0.10%     | 0.10%             |
+
+These are standard-tier rates. If you have a VIP fee tier or use the exchange's native token for discounts, adjust the commission setting in the backtest configuration to match.
+
+### How commission is applied
+
+Commission is deducted from your balance on every order fill. For a $10,000 buy at 0.10% commission:
+
+```
+Commission = $10,000 * 0.001 = $10
+Deducted from balance: $10
+```
+
+Both the buy and the sell are charged, so a round-trip trade costs 0.20% in commissions at default rates.
+
+## Why realistic modeling matters
+
+Consider a strategy that trades 200 times over 6 months with an average trade size of $5,000:
+
+| Setting                   | Cost per trade | Total cost  | Impact on $10K capital |
+|---------------------------|---------------|-------------|------------------------|
+| No slippage, no fees      | $0            | $0          | 0%                     |
+| 0.05% slippage + 0.10% fee| $7.50        | $3,000      | 30%                    |
+
+That is a 30% drag on your returns just from execution costs. A strategy that shows 40% returns with zero costs might only deliver 10% in reality — or even lose money.
+
+> Ignoring slippage and commissions is the most common cause of backtesting disappointment. If your strategy barely profits with realistic costs, it probably won't work in live trading.
+
+## Tips for accurate backtests
+
+1. **Always enable slippage and commission.** Use the defaults (0.05% slippage, 0.10% commission) as a starting point.
+2. **Match your actual fee tier.** If you have VIP rates, update the commission accordingly.
+3. **Stress test with higher slippage.** Run a second backtest at 0.10% slippage to see how sensitive your strategy is to execution quality.
+4. **Consider trade frequency.** High-frequency strategies are much more sensitive to costs than strategies that trade a few times per week.
+5. **Test on liquid pairs first.** BTC/USDT and ETH/USDT have the deepest order books, so the default slippage settings are most accurate for these.
+
+## Configuring in the UI
+
+When setting up a backtest:
+
+1. Click **Backtest** in the strategy editor.
+2. Expand the **Advanced Settings** section.
+3. Set **Slippage Model** to your preferred option and enter the value.
+4. Set **Commission Rate** to match your exchange fee tier.
+5. Click **Run**.
+
+These settings are saved per strategy and reused on subsequent runs unless you change them.
+
+## Next steps
+
+- [Running a Backtest](/docs/backtesting/running-backtest) — full backtest setup walkthrough
+- [Understanding Results](/docs/backtesting/understanding-results) — interpret your backtest metrics
+- [Paper Trading](/docs/trading/paper-trading) — test with live data and real execution dynamics

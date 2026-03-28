@@ -1,8 +1,125 @@
 ---
-title: "Webhooks & TradingView"
-description: "Webhooks & TradingView — content coming soon"
+title: "Webhook Signals & TradingView"
+description: "Receive trading signals from TradingView and other sources via webhooks and execute them automatically"
 ---
 
-# Webhooks & TradingView
+# Webhook Signals & TradingView
 
-Content coming soon.
+Not every strategy needs to be written in Python. With webhooks, you can send trading signals from external tools — like TradingView alerts — and have Algomatter execute them automatically on your connected exchange.
+
+## How webhook signals work
+
+1. Algomatter gives you a unique **webhook URL** for each webhook strategy.
+2. An external source (TradingView, a custom script, etc.) sends an HTTP POST to that URL with a JSON payload describing the trade.
+3. Algomatter parses the payload using your [mapping template](/docs/strategies/mapping-templates), determines the action (buy/sell), symbol, and quantity, then executes the trade.
+
+This all happens in seconds — from alert to order execution.
+
+## Setting up a TradingView webhook
+
+### Step 1: Create a webhook strategy in Algomatter
+
+1. Go to **Strategies → Webhook** and click **New Webhook Strategy**.
+2. Give it a name, like `tv-btc-signals`.
+3. Select the exchange broker you want to trade on.
+4. Copy the **Webhook URL** shown on the strategy page. It looks like:
+
+```
+https://api.algomatter.com/webhooks/wh_abc123xyz
+```
+
+### Step 2: Configure a TradingView alert
+
+1. In TradingView, open the chart for your desired symbol.
+2. Set up your indicator or condition (e.g., RSI crosses below 30).
+3. Click **Create Alert**.
+4. Under **Notifications**, enable **Webhook URL** and paste your Algomatter webhook URL.
+5. In the **Message** field, enter the JSON payload:
+
+```json
+{
+  "action": "buy",
+  "symbol": "BTC/USDT",
+  "qty": 0.05,
+  "price": {{close}},
+  "timestamp": "{{timenow}}"
+}
+```
+
+> TradingView placeholders like `{{close}}` and `{{timenow}}` are automatically replaced with real values when the alert fires.
+
+### Step 3: Set up the mapping
+
+Back in Algomatter, configure the field mapping so the platform knows how to interpret the incoming JSON:
+
+| Algomatter field | JSON path     |
+|------------------|---------------|
+| Action           | `$.action`    |
+| Symbol           | `$.symbol`    |
+| Quantity         | `$.qty`       |
+
+You can use the default mapping template for TradingView or create a custom one. See [Mapping Templates](/docs/strategies/mapping-templates) for the full guide.
+
+## JSON payload format
+
+Algomatter expects a JSON POST body. At minimum, you need to specify an action and a symbol:
+
+```json
+{
+  "action": "buy",
+  "symbol": "BTC/USDT"
+}
+```
+
+### Supported fields
+
+| Field       | Required | Description                             |
+|-------------|----------|-----------------------------------------|
+| `action`    | Yes      | `"buy"` or `"sell"`                     |
+| `symbol`    | Yes      | Trading pair (e.g., `"ETH/USDT"`)       |
+| `qty`       | No       | Order quantity. Defaults to configured amount |
+| `price`     | No       | Reference price (for logging)           |
+| `timestamp` | No       | Signal timestamp                        |
+
+If `qty` is omitted, Algomatter uses the default position size configured in your webhook strategy settings.
+
+## Testing with curl
+
+You can test your webhook without TradingView by sending a request from the command line:
+
+```bash
+curl -X POST https://api.algomatter.com/webhooks/wh_abc123xyz \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "buy",
+    "symbol": "BTC/USDT",
+    "qty": 0.01
+  }'
+```
+
+If the webhook is connected to a paper trading deployment, the order will execute with virtual capital — a safe way to verify everything works end to end.
+
+> Always test with paper trading first. Send a buy signal, verify it appears in your trade log, then send a sell signal to close.
+
+## Monitoring webhook signals
+
+Every incoming webhook is logged in the **Webhook Log** tab of your strategy. You can see:
+
+- Timestamp of receipt
+- Raw JSON payload
+- Parsed action and parameters
+- Order execution status (success or error with details)
+
+## Security
+
+Each webhook URL contains a unique token. Treat it like a password:
+
+- Do not share your webhook URL publicly.
+- If you suspect the URL has been compromised, click **Regenerate URL** in the strategy settings to get a new one (the old one immediately stops working).
+- Algomatter validates incoming payloads and rejects malformed requests.
+
+## Next steps
+
+- [Mapping Templates](/docs/strategies/mapping-templates) — advanced payload mapping with JSONPath
+- [Paper Trading](/docs/trading/paper-trading) — test webhook signals safely
+- [Going Live](/docs/trading/going-live) — deploy webhook strategies to real capital

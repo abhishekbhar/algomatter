@@ -1,8 +1,206 @@
 ---
 title: "Python SDK Guide"
-description: "Python SDK Guide — content coming soon"
+description: "Complete reference for the Algomatter Python SDK — lifecycle methods, order management, indicators, and more"
 ---
 
 # Python SDK Guide
 
-Content coming soon.
+This is the full reference for the Algomatter Python Strategy SDK. Every strategy you write extends the `Strategy` base class and uses the methods documented here.
+
+## Strategy base class
+
+```python
+from algomatter import Strategy
+
+class MyStrategy(Strategy):
+    def on_start(self):
+        """Called once when the strategy starts."""
+        pass
+
+    def on_candle(self, candle):
+        """Called on each new candlestick close."""
+        pass
+
+    def on_order_fill(self, order):
+        """Called when an order is filled."""
+        pass
+
+    def on_stop(self):
+        """Called when the strategy is stopped."""
+        pass
+```
+
+## Lifecycle methods
+
+### `on_start(self)`
+
+Runs once when the strategy begins execution (at the start of a backtest or when deployed live). Use it to initialize variables or log configuration.
+
+```python
+def on_start(self):
+    self.trade_count = 0
+    self.log("Strategy started")
+```
+
+### `on_candle(self, candle)`
+
+The core method. Called every time a new candle closes. This is where you evaluate conditions and place orders. See the **Candle data** section below for available properties.
+
+### `on_order_fill(self, order)`
+
+Called whenever one of your orders is filled. The `order` object contains:
+
+| Property         | Description                              |
+|------------------|------------------------------------------|
+| `order.symbol`   | Trading pair                             |
+| `order.side`     | `"buy"` or `"sell"`                      |
+| `order.qty`      | Filled quantity                          |
+| `order.price`    | Fill price                               |
+| `order.timestamp` | Time of fill                            |
+
+```python
+def on_order_fill(self, order):
+    self.log(f"Filled {order.side} {order.qty} {order.symbol} at {order.price}")
+```
+
+### `on_stop(self)`
+
+Runs when the strategy is stopped — either manually, at the end of a backtest, or when the [kill switch](/docs/trading/kill-switch) triggers. Use it for cleanup or final logging.
+
+## Order methods
+
+### `self.buy(symbol, qty)`
+
+Places a market buy order.
+
+```python
+self.buy("BTC/USDT", qty=0.05)
+```
+
+### `self.sell(symbol, qty=None)`
+
+Places a market sell order. If `qty` is omitted, the entire position is closed.
+
+```python
+# Sell a specific amount
+self.sell("BTC/USDT", qty=0.02)
+
+# Close the full position
+self.sell("BTC/USDT")
+```
+
+### `self.cancel(order_id)`
+
+Cancels a pending order by its ID.
+
+```python
+def on_candle(self, candle):
+    if some_condition:
+        self.cancel(self.pending_order_id)
+```
+
+## Position access
+
+### `self.position`
+
+Returns the current position for the active symbol. Evaluates to `True` if you hold a position, `False` if flat.
+
+| Property              | Description                        |
+|-----------------------|------------------------------------|
+| `self.position.qty`   | Quantity held                      |
+| `self.position.entry_price` | Average entry price          |
+| `self.position.unrealized_pnl` | Current unrealized P&L    |
+| `self.position.side`  | `"long"` or `None`                |
+
+```python
+if self.position:
+    self.log(f"Holding {self.position.qty} at {self.position.entry_price}")
+```
+
+## Portfolio access
+
+### `self.portfolio`
+
+Access your full portfolio state.
+
+| Property                   | Description                    |
+|----------------------------|--------------------------------|
+| `self.portfolio.balance`   | Available cash balance         |
+| `self.portfolio.equity`    | Total equity (balance + positions) |
+| `self.portfolio.positions` | Dict of all open positions     |
+
+```python
+def on_candle(self, candle):
+    # Size position as 10% of equity
+    size = (self.portfolio.equity * 0.10) / candle.close
+    self.buy(candle.symbol, qty=size)
+```
+
+## Candle data
+
+The `candle` object in `on_candle` provides price data and pre-computed indicators:
+
+### Price fields
+`candle.open`, `candle.high`, `candle.low`, `candle.close`, `candle.volume`, `candle.symbol`, `candle.timestamp`
+
+### Built-in indicators
+
+| Indicator          | Property           | Default period |
+|--------------------|--------------------|----------------|
+| RSI                | `candle.rsi`       | 14             |
+| SMA                | `candle.sma_20`    | 20             |
+| EMA (12)           | `candle.ema_12`    | 12             |
+| EMA (26)           | `candle.ema_26`    | 26             |
+| MACD line          | `candle.macd`      | 12/26          |
+| MACD signal        | `candle.macd_signal`| 9             |
+| MACD histogram     | `candle.macd_hist` | —              |
+| Bollinger Upper    | `candle.bb_upper`  | 20, 2 std      |
+| Bollinger Middle   | `candle.bb_middle` | 20             |
+| Bollinger Lower    | `candle.bb_lower`  | 20, 2 std      |
+
+> Indicators return `None` until enough candles have been collected to compute them. Always add a guard check before using indicator values.
+
+## Logging
+
+### `self.log(message)`
+
+Write a message to the strategy log. Logs appear in the backtest results and the live trading dashboard.
+
+```python
+self.log(f"RSI is {candle.rsi}, close is {candle.close}")
+```
+
+Keep logs concise in live trading to avoid performance overhead.
+
+## Complete example
+
+```python
+from algomatter import Strategy
+
+class DualEMA(Strategy):
+    def on_start(self):
+        self.log("Dual EMA crossover strategy started")
+
+    def on_candle(self, candle):
+        if candle.ema_12 is None or candle.ema_26 is None:
+            return
+
+        if candle.ema_12 > candle.ema_26 and not self.position:
+            size = (self.portfolio.equity * 0.5) / candle.close
+            self.buy(candle.symbol, qty=size)
+
+        elif candle.ema_12 < candle.ema_26 and self.position:
+            self.sell(candle.symbol)
+
+    def on_order_fill(self, order):
+        self.log(f"{order.side} filled: {order.qty} at {order.price}")
+
+    def on_stop(self):
+        self.log("Strategy stopped")
+```
+
+## Next steps
+
+- [Your First Strategy](/docs/getting-started/first-strategy) — a beginner-friendly walkthrough
+- [Strategy Templates](/docs/strategies/templates) — ready-made strategies to customize
+- [Running a Backtest](/docs/backtesting/running-backtest) — test your strategy against historical data

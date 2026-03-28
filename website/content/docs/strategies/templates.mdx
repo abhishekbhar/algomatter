@@ -1,8 +1,151 @@
 ---
 title: "Strategy Templates"
-description: "Strategy Templates — content coming soon"
+description: "Pre-built strategy templates you can use as starting points — RSI, Moving Average Crossover, Bollinger Bands, and MACD"
 ---
 
 # Strategy Templates
 
-Content coming soon.
+Algomatter ships with several battle-tested strategy templates. Each one is ready to backtest immediately, and you can customize the parameters to fit your trading style.
+
+To use a template, go to **Strategies → Hosted → New Strategy** and select one from the **Templates** dropdown.
+
+## RSI Mean Reversion
+
+A classic mean-reversion strategy that buys oversold conditions and sells overbought ones.
+
+**How it works:** When RSI drops below 30, the asset is considered oversold and the strategy buys. When RSI rises above 70, it sells.
+
+```python
+from algomatter import Strategy
+
+class RSIMeanReversion(Strategy):
+    def on_candle(self, candle):
+        if candle.rsi is None:
+            return
+
+        if candle.rsi < 30 and not self.position:
+            size = (self.portfolio.equity * 0.5) / candle.close
+            self.buy(candle.symbol, qty=size)
+
+        elif candle.rsi > 70 and self.position:
+            self.sell(candle.symbol)
+```
+
+**Best for:** Range-bound markets where prices oscillate between support and resistance levels.
+
+**Recommended timeframes:** 1H, 4H. Shorter timeframes generate more signals but also more noise.
+
+> Tip: Try adjusting the RSI thresholds (e.g., 25/75 for stricter signals) and backtest to see the difference.
+
+## Dual Moving Average Crossover
+
+A trend-following strategy that uses two exponential moving averages to detect momentum shifts.
+
+**How it works:** When the fast EMA (12) crosses above the slow EMA (26), a bullish trend is forming — buy. When the fast EMA crosses below, sell.
+
+```python
+from algomatter import Strategy
+
+class DualMACrossover(Strategy):
+    def on_candle(self, candle):
+        if candle.ema_12 is None or candle.ema_26 is None:
+            return
+
+        if candle.ema_12 > candle.ema_26 and not self.position:
+            size = (self.portfolio.equity * 0.5) / candle.close
+            self.buy(candle.symbol, qty=size)
+
+        elif candle.ema_12 < candle.ema_26 and self.position:
+            self.sell(candle.symbol)
+```
+
+**Best for:** Trending markets. This strategy thrives when prices move in sustained directions and suffers during choppy, sideways periods.
+
+**Recommended timeframes:** 4H, 1D. Longer timeframes filter out false crossovers.
+
+## Bollinger Band Breakout
+
+A volatility-based strategy that trades breakouts from Bollinger Bands.
+
+**How it works:** When the price closes below the lower Bollinger Band, it buys the dip. When the price reaches the upper band, it takes profit.
+
+```python
+from algomatter import Strategy
+
+class BollingerBreakout(Strategy):
+    def on_candle(self, candle):
+        if candle.bb_lower is None:
+            return
+
+        # Buy when price dips below lower band
+        if candle.close < candle.bb_lower and not self.position:
+            size = (self.portfolio.equity * 0.5) / candle.close
+            self.buy(candle.symbol, qty=size)
+
+        # Sell at or above the upper band
+        elif candle.close >= candle.bb_upper and self.position:
+            self.sell(candle.symbol)
+
+        # Stop loss at middle band breakdown
+        elif self.position and candle.close < candle.bb_middle:
+            if candle.close < self.position.entry_price * 0.97:
+                self.sell(candle.symbol)
+```
+
+**Best for:** Markets that mean-revert after volatility spikes. Works well on high-volume pairs like BTC/USDT and ETH/USDT.
+
+**Recommended timeframes:** 1H, 4H. The 20-period Bollinger Bands adapt to local volatility at these scales.
+
+## MACD Momentum
+
+A momentum strategy using the MACD indicator to identify trend direction and entry timing.
+
+**How it works:** Buy when the MACD histogram turns positive (MACD line crosses above the signal line). Sell when the histogram turns negative.
+
+```python
+from algomatter import Strategy
+
+class MACDMomentum(Strategy):
+    def on_candle(self, candle):
+        if candle.macd_hist is None:
+            return
+
+        # Enter on positive histogram (bullish momentum)
+        if candle.macd_hist > 0 and not self.position:
+            size = (self.portfolio.equity * 0.5) / candle.close
+            self.buy(candle.symbol, qty=size)
+
+        # Exit on negative histogram (bearish momentum)
+        elif candle.macd_hist < 0 and self.position:
+            self.sell(candle.symbol)
+```
+
+**Best for:** Catching medium-term momentum swings. MACD works well as a confirmation indicator when combined with other signals.
+
+**Recommended timeframes:** 4H, 1D. Shorter timeframes create frequent whipsaw signals.
+
+## Customizing templates
+
+Every template is fully editable. Here are some ideas:
+
+- **Adjust position sizing:** Change the equity percentage (e.g., `0.5` to `0.25` for smaller positions).
+- **Add stop losses:** Check `self.position.unrealized_pnl` to exit losing trades early.
+- **Combine indicators:** Use RSI as a filter for MA crossover signals.
+- **Change symbols:** Any template works on any supported trading pair.
+
+## Choosing the right template
+
+| Market condition | Recommended template        |
+|------------------|-----------------------------|
+| Trending         | Dual MA Crossover, MACD     |
+| Range-bound      | RSI Mean Reversion          |
+| High volatility  | Bollinger Band Breakout     |
+| Unclear          | Start with RSI, it's simplest|
+
+> Remember: past backtest results do not guarantee future performance. Always [paper trade](/docs/trading/paper-trading) a strategy before going live.
+
+## Next steps
+
+- [Python SDK Guide](/docs/strategies/python-sdk) — full reference for all SDK methods and indicators
+- [Running a Backtest](/docs/backtesting/running-backtest) — test any template against historical data
+- [Paper Trading](/docs/trading/paper-trading) — validate your strategy with live market data

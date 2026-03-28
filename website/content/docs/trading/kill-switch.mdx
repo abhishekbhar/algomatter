@@ -1,8 +1,137 @@
 ---
 title: "Kill Switch & Safety"
-description: "Kill Switch & Safety — content coming soon"
+description: "Emergency controls and safety features to protect your capital — kill switch, drawdown limits, and automatic safeguards"
 ---
 
 # Kill Switch & Safety
 
-Content coming soon.
+When you are trading with real capital, things can go wrong — bugs, flash crashes, unexpected market conditions. Algomatter provides multiple layers of safety to protect your capital, with the kill switch as the most important one.
+
+## What the kill switch does
+
+The kill switch is an emergency stop mechanism that:
+
+1. **Immediately stops** your strategy from placing any new orders.
+2. **Cancels all pending orders** on the exchange.
+3. **Optionally liquidates** all open positions at market price.
+
+Think of it as pulling the emergency brake. Everything stops.
+
+## Triggering the kill switch
+
+### From the UI
+
+Click the red **Kill Switch** button on the Live Trading dashboard. A confirmation dialog will appear asking whether you also want to liquidate open positions:
+
+- **Stop only:** The strategy halts but your positions remain open. You manage them manually.
+- **Stop and liquidate:** The strategy halts and all open positions are closed at market price immediately.
+
+### From the API
+
+You can also trigger the kill switch programmatically:
+
+```bash
+curl -X POST https://api.algomatter.com/v1/deployments/{deployment_id}/kill \
+  -H "Authorization: Bearer YOUR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"liquidate": true}'
+```
+
+This is useful if you want to integrate the kill switch with external monitoring tools or scripts.
+
+## Automatic kill switch triggers
+
+You don't have to watch your screen 24/7. Algomatter can trigger the kill switch automatically based on rules you configure.
+
+### Maximum drawdown limit
+
+Set a percentage threshold. If your equity drops by that amount from its highest point, the kill switch fires automatically.
+
+**Example:** Starting equity is $10,000. Equity peaks at $12,000, then drops. With a 15% max drawdown limit, the kill switch triggers if equity falls to $10,200 (15% below the $12,000 peak).
+
+Configure this under **Deployment Settings → Risk Management → Max Drawdown**.
+
+### Maximum daily loss
+
+Set a dollar amount or percentage that you are willing to lose in a single day. If the limit is hit, the strategy pauses until the next UTC day.
+
+**Example:** With a $500 daily loss limit, if your strategy loses $500 in a day, it stops placing orders until midnight UTC.
+
+Configure this under **Deployment Settings → Risk Management → Daily Loss Limit**.
+
+### Maximum consecutive losses
+
+Set the number of consecutive losing trades allowed before the strategy pauses. This catches strategies that may be stuck in a bad loop.
+
+**Example:** With a limit of 5 consecutive losses, the strategy pauses after 5 losing trades in a row and sends you a notification.
+
+> Start with conservative limits. A 10-15% max drawdown and a 3-5% daily loss limit are reasonable defaults for most strategies.
+
+## Position liquidation behavior
+
+When the kill switch fires with liquidation enabled:
+
+1. All open positions are closed with **market orders**.
+2. Orders are sent immediately to the exchange — there is no delay or batching.
+3. Market orders ensure execution but may experience slippage during volatile conditions.
+4. The liquidation status is logged in the trade log with a `[KILL SWITCH]` tag.
+
+If you prefer to manage exits yourself, trigger the kill switch with `"liquidate": false` and handle positions manually on the exchange.
+
+## Restarting after a kill switch
+
+After a kill switch event:
+
+1. The strategy enters a **stopped** state. It will not restart automatically.
+2. Review the trade log and strategy logs to understand what happened.
+3. Check your exchange account directly to confirm all positions and orders are in the expected state.
+4. If the trigger was a false alarm or a temporary condition, you can redeploy the strategy from the Strategies page.
+
+> Never immediately restart a strategy after a kill switch without understanding why it triggered. Take time to review the situation.
+
+## Other safety features
+
+### Rate limiting
+
+Algomatter limits the number of orders a strategy can place per minute to prevent runaway trading. The default limit is 10 orders per minute. If your strategy attempts to exceed this, additional orders are queued and a warning is logged.
+
+### Position size limits
+
+Set a maximum position size (in quote currency or base quantity) that your strategy can hold. Any order that would exceed this limit is rejected.
+
+Configure under **Deployment Settings → Risk Management → Max Position Size**.
+
+### Duplicate order prevention
+
+Algomatter detects and blocks duplicate orders — for example, if a bug causes your strategy to submit the same buy order multiple times within seconds.
+
+### Exchange connectivity monitoring
+
+Algomatter continuously monitors connectivity to your exchange. If the connection drops:
+
+- The strategy pauses automatically.
+- You receive a notification.
+- When connectivity is restored, the strategy resumes (or stays paused if you prefer — configurable in settings).
+
+## Notification settings
+
+Configure how you want to be alerted about safety events:
+
+- **Email:** Receive an email when the kill switch triggers, drawdown limits are approached, or connectivity issues occur.
+- **Dashboard:** All events appear in the notification center within the Algomatter app.
+
+Enable notifications under **Settings → Notifications**.
+
+## Best practices
+
+1. **Always configure the kill switch** before going live. Do not rely on manual monitoring alone.
+2. **Set max drawdown below your pain threshold.** If a 20% loss would cause you to panic, set the limit at 15%.
+3. **Test your kill switch.** Trigger it once during paper trading to verify it works as expected.
+4. **Use multiple safety layers.** Combine max drawdown with daily loss limits and position size caps.
+5. **Review triggers, don't ignore them.** A kill switch trigger is a signal that something is off. Investigate before redeploying.
+
+## Next steps
+
+- [Going Live](/docs/trading/going-live) — full live deployment guide
+- [Paper Trading](/docs/trading/paper-trading) — test safety features in a risk-free environment
+- [Connecting an Exchange](/docs/getting-started/connecting-exchange) — ensure your broker is configured correctly
