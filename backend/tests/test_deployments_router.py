@@ -185,8 +185,11 @@ async def test_stop_all_deployments(client):
     resp = await client.post("/api/v1/deployments/stop-all", headers=headers)
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 2
-    assert all(d["status"] == "stopped" for d in data)
+    assert "deployments" in data
+    assert "orders_cancelled" in data
+    assert isinstance(data["deployments"], list)
+    assert len(data["deployments"]) == 2
+    assert all(d["status"] == "stopped" for d in data["deployments"])
 
 
 # ---------------------------------------------------------------------------

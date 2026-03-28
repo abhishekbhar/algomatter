@@ -58,6 +58,7 @@ from app.deployments.schemas import (
     PositionResponse,
     PromoteRequest,
     RecentTradesResponse,
+    StopAllResponse,
     TradesResponse,
 )
 from app.strategy_runner.order_router import translate_order, ORDER_TYPE_MAP
@@ -573,7 +574,7 @@ async def stop_deployment(
 
 @router.post(
     "/api/v1/deployments/stop-all",
-    response_model=list[DeploymentResponse],
+    response_model=StopAllResponse,
 )
 async def stop_all_deployments(
     request: Request,
@@ -582,20 +583,33 @@ async def stop_all_deployments(
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
     result = await session.execute(
-        select(StrategyDeployment)
-        .options(selectinload(StrategyDeployment.strategy_code))
-        .where(
+        select(StrategyDeployment).where(
             StrategyDeployment.tenant_id == tenant_id,
             StrategyDeployment.status.in_(["pending", "running", "paused"]),
-        )
+        ).options(selectinload(StrategyDeployment.strategy_code))
     )
     deployments = result.scalars().all()
     now = datetime.now(UTC)
     stopped_ids = []
+    orders_cancelled = 0
+
     for dep in deployments:
         dep.status = "stopped"
         dep.stopped_at = now
         stopped_ids.append(str(dep.id))
+
+        # Cancel open orders
+        open_trade_result = await session.execute(
+            select(DeploymentTrade).where(
+                DeploymentTrade.deployment_id == dep.id,
+                DeploymentTrade.status == "submitted",
+            )
+        )
+        open_trades = open_trade_result.scalars().all()
+        for trade in open_trades:
+            trade.status = "cancelled"
+            orders_cancelled += 1
+
     await session.commit()
 
     redis = request.app.state.redis
@@ -605,12 +619,19 @@ async def stop_all_deployments(
             json.dumps({"action": "unregister", "deployment_id": d_id}),
         )
 
-    # Refresh all
-    stopped = []
-    for dep in deployments:
-        await session.refresh(dep)
-        stopped.append(_deployment_to_response(dep))
-    return stopped
+    # Re-query to get fresh objects with strategy_code loaded
+    if stopped_ids:
+        refresh_result = await session.execute(
+            select(StrategyDeployment).where(
+                StrategyDeployment.id.in_([uuid.UUID(sid) for sid in stopped_ids])
+            ).options(selectinload(StrategyDeployment.strategy_code))
+        )
+        refreshed = refresh_result.scalars().all()
+    else:
+        refreshed = []
+
+    stopped = [_deployment_to_response(dep) for dep in refreshed]
+    return StopAllResponse(deployments=stopped, orders_cancelled=orders_cancelled)
 
 
 # ---------------------------------------------------------------------------

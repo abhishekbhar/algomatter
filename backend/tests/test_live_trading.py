@@ -493,3 +493,23 @@ async def test_cancel_order_endpoint(client, db_session):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "cancelled"
+
+
+## ─── Stop-all enhanced response tests ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_stop_all_returns_stop_all_response(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session)
+
+    resp = await client.post(
+        "/api/v1/deployments/stop-all",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "deployments" in data
+    assert "orders_cancelled" in data
+    assert isinstance(data["deployments"], list)
+    assert isinstance(data["orders_cancelled"], int)
