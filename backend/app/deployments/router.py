@@ -5,6 +5,7 @@ Endpoints:
     GET    /api/v1/hosted-strategies/{strategy_id}/deployments  List strategy deployments
     GET    /api/v1/deployments                                  List all user deployments
     GET    /api/v1/deployments/recent-trades                    Recent trades (cross-deployment)
+    GET    /api/v1/deployments/aggregate-stats                  Aggregate stats (cross-deployment)
     GET    /api/v1/deployments/{deployment_id}                  Get deployment detail
     POST   /api/v1/deployments/{deployment_id}/pause            Pause deployment
     POST   /api/v1/deployments/{deployment_id}/resume           Resume deployment
@@ -16,6 +17,8 @@ Endpoints:
     GET    /api/v1/deployments/{deployment_id}/results          Get backtest results
     GET    /api/v1/deployments/{deployment_id}/orders           Get open orders
     GET    /api/v1/deployments/{deployment_id}/logs             Get logs (paginated)
+    GET    /api/v1/deployments/{deployment_id}/metrics          Get deployment metrics
+    GET    /api/v1/deployments/{deployment_id}/comparison       Compare live vs backtest
 """
 
 from __future__ import annotations
@@ -39,17 +42,21 @@ from app.db.models import (
     StrategyResult,
 )
 from app.deployments.schemas import (
+    AggregateStatsResponse,
+    ComparisonResponse,
     CreateDeploymentRequest,
     DeploymentLogEntry,
     DeploymentLogsResponse,
     DeploymentResponse,
     DeploymentResultResponse,
     DeploymentTradeResponse,
+    MetricsResponse,
     PositionResponse,
     PromoteRequest,
     RecentTradesResponse,
     TradesResponse,
 )
+from app.deployments.trade_service import compute_live_metrics
 from app.deployments.service import (
     check_deployment_limits,
     resolve_code_version,
@@ -335,6 +342,59 @@ async def get_recent_trades(
         trade_responses.append(_trade_to_response(t, name, symbol))
 
     return RecentTradesResponse(trades=trade_responses, total=total)
+
+
+# ---------------------------------------------------------------------------
+# Aggregate stats (cross-deployment) — MUST be before /{deployment_id} routes
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/api/v1/deployments/aggregate-stats",
+    response_model=AggregateStatsResponse,
+)
+async def get_aggregate_stats(
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+
+    result = await session.execute(
+        select(StrategyDeployment).where(
+            StrategyDeployment.tenant_id == tenant_id,
+            StrategyDeployment.status.in_(["running", "paused"]),
+        )
+    )
+    active_deps = result.scalars().all()
+
+    total_equity = 0.0
+    total_capital = 0.0
+    for dep in active_deps:
+        state = await session.get(DeploymentState, dep.id)
+        if state and state.portfolio:
+            total_equity += state.portfolio.get("equity", 0)
+        total_capital += (dep.config or {}).get("initial_capital", 0)
+
+    aggregate_pnl = total_equity - total_capital if total_capital > 0 else 0
+    aggregate_pnl_pct = (aggregate_pnl / total_capital * 100) if total_capital > 0 else 0
+
+    from datetime import date
+    today_start = datetime(date.today().year, date.today().month, date.today().day, tzinfo=UTC)
+    count_result = await session.execute(
+        select(func.count()).where(
+            DeploymentTrade.tenant_id == tenant_id,
+            DeploymentTrade.created_at >= today_start,
+        )
+    )
+    todays_trades = count_result.scalar() or 0
+
+    return AggregateStatsResponse(
+        total_deployed_capital=total_capital,
+        aggregate_pnl=aggregate_pnl,
+        aggregate_pnl_pct=aggregate_pnl_pct,
+        active_deployments=len(active_deps),
+        todays_trades=todays_trades,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -871,4 +931,147 @@ async def get_deployment_logs(
         total=total or 0,
         offset=offset,
         limit=limit,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Get deployment metrics
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/api/v1/deployments/{deployment_id}/metrics",
+    response_model=MetricsResponse,
+)
+async def get_deployment_metrics(
+    deployment_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    result = await session.execute(
+        select(StrategyDeployment).where(
+            StrategyDeployment.id == deployment_id, StrategyDeployment.tenant_id == tenant_id
+        )
+    )
+    dep = result.scalar_one_or_none()
+    if not dep:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+
+    # For completed backtests, return stored metrics
+    if dep.mode == "backtest" and dep.status == "completed":
+        sr_result = await session.execute(
+            select(StrategyResult).where(
+                StrategyResult.deployment_id == deployment_id,
+                StrategyResult.tenant_id == tenant_id,
+            ).order_by(StrategyResult.created_at.desc()).limit(1)
+        )
+        sr = sr_result.scalar_one_or_none()
+        if sr and sr.metrics:
+            return MetricsResponse(
+                **sr.metrics,
+                best_trade=None,
+                worst_trade=None,
+            )
+
+    # For paper/live: compute from DeploymentTrade
+    result = await session.execute(
+        select(DeploymentTrade).where(
+            DeploymentTrade.deployment_id == deployment_id,
+            DeploymentTrade.tenant_id == tenant_id,
+            DeploymentTrade.status == "filled",
+            DeploymentTrade.realized_pnl.isnot(None),
+        ).order_by(DeploymentTrade.created_at.asc())
+    )
+    filled_trades = result.scalars().all()
+
+    initial_capital = (dep.config or {}).get("initial_capital", 10000.0)
+    trades_data = [{"pnl": float(t.realized_pnl)} for t in filled_trades]
+    metrics = compute_live_metrics(trades_data, initial_capital)
+
+    return MetricsResponse(**metrics)
+
+
+# ---------------------------------------------------------------------------
+# Get deployment comparison (live vs backtest)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/api/v1/deployments/{deployment_id}/comparison",
+    response_model=ComparisonResponse,
+)
+async def get_deployment_comparison(
+    deployment_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    result = await session.execute(
+        select(StrategyDeployment).where(
+            StrategyDeployment.id == deployment_id, StrategyDeployment.tenant_id == tenant_id
+        )
+    )
+    dep = result.scalar_one_or_none()
+    if not dep:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+
+    # Walk promotion chain to find backtest
+    chain = [str(dep.id)]
+    current = dep
+    backtest_dep = None
+    while current.promoted_from_id:
+        result = await session.execute(
+            select(StrategyDeployment).where(StrategyDeployment.id == current.promoted_from_id)
+        )
+        parent = result.scalar_one_or_none()
+        if not parent:
+            break
+        chain.append(str(parent.id))
+        if parent.mode == "backtest":
+            backtest_dep = parent
+            break
+        current = parent
+
+    if not backtest_dep:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No backtest in promotion chain")
+
+    # Get backtest metrics
+    sr_result = await session.execute(
+        select(StrategyResult).where(
+            StrategyResult.deployment_id == backtest_dep.id,
+            StrategyResult.tenant_id == tenant_id,
+        ).order_by(StrategyResult.created_at.desc()).limit(1)
+    )
+    sr = sr_result.scalar_one_or_none()
+    backtest_metrics = sr.metrics if sr and sr.metrics else {}
+
+    # Get current live metrics
+    trade_result = await session.execute(
+        select(DeploymentTrade).where(
+            DeploymentTrade.deployment_id == deployment_id,
+            DeploymentTrade.tenant_id == tenant_id,
+            DeploymentTrade.status == "filled",
+            DeploymentTrade.realized_pnl.isnot(None),
+        ).order_by(DeploymentTrade.created_at.asc())
+    )
+    filled_trades = trade_result.scalars().all()
+
+    initial_capital = (dep.config or {}).get("initial_capital", 10000.0)
+    trades_data = [{"pnl": float(t.realized_pnl)} for t in filled_trades]
+    current_metrics = compute_live_metrics(trades_data, initial_capital)
+
+    # Compute deltas
+    deltas = {}
+    for key in ["total_return", "win_rate", "profit_factor", "sharpe_ratio", "max_drawdown", "total_trades", "avg_trade_pnl"]:
+        bt_val = backtest_metrics.get(key, 0)
+        cur_val = current_metrics.get(key, 0)
+        deltas[key] = cur_val - bt_val
+
+    return ComparisonResponse(
+        backtest=backtest_metrics,
+        current=current_metrics,
+        deltas=deltas,
+        backtest_deployment_id=str(backtest_dep.id),
+        promotion_chain=list(reversed(chain)),
     )

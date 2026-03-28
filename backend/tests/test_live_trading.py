@@ -359,3 +359,64 @@ async def test_recent_trades_endpoint(client, db_session):
     data = resp.json()
     assert data["total"] >= 1
     assert len(data["trades"]) >= 1
+
+
+## ─── Metrics, Comparison, Aggregate Stats endpoint tests ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_metrics_endpoint(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session)
+
+    dep_id = uuid.UUID(deployment["id"])
+    result = await db_session.execute(
+        select(StrategyDeployment).where(StrategyDeployment.id == dep_id)
+    )
+    dep = result.scalar_one()
+
+    trade = DeploymentTrade(
+        tenant_id=dep.tenant_id, deployment_id=dep.id, order_id="m1",
+        action="SELL", quantity=1.0, order_type="MARKET", status="filled",
+        is_manual=False, realized_pnl=50.0, fill_price=110.0, fill_quantity=1.0,
+    )
+    db_session.add(trade)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/deployments/{deployment['id']}/metrics",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_trades"] == 1
+    assert data["best_trade"] == 50.0
+
+
+@pytest.mark.asyncio
+async def test_get_aggregate_stats_endpoint(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session)
+
+    resp = await client.get(
+        "/api/v1/deployments/aggregate-stats",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total_deployed_capital" in data
+    assert "aggregate_pnl" in data
+    assert "active_deployments" in data
+    assert "todays_trades" in data
+
+
+@pytest.mark.asyncio
+async def test_get_comparison_no_promotion_chain(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session)
+
+    resp = await client.get(
+        f"/api/v1/deployments/{deployment['id']}/comparison",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 404
