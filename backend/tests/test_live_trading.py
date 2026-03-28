@@ -184,3 +184,85 @@ async def test_deployment_response_includes_strategy_name(client, db_session):
     data = resp.json()
     assert "strategy_name" in data
     assert data["strategy_name"] == "SMA Bot"
+
+
+## ─── dispatch_orders DeploymentTrade integration tests ──────────────────────
+
+
+@pytest.mark.asyncio
+async def test_dispatch_orders_creates_trade_record(db_session):
+    """dispatch_orders() should create a DeploymentTrade row for paper orders."""
+    from app.strategy_runner.order_router import dispatch_orders
+
+    user = User(email="dispatch@test.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    tenant_id = user.id
+
+    sc = StrategyCode(tenant_id=tenant_id, name="Test", description="", code="pass", entrypoint="Strategy", version=1)
+    db_session.add(sc)
+    await db_session.flush()
+
+    scv = StrategyCodeVersion(tenant_id=tenant_id, strategy_code_id=sc.id, version=1, code="pass")
+    db_session.add(scv)
+    await db_session.flush()
+
+    dep = StrategyDeployment(
+        tenant_id=tenant_id, strategy_code_id=sc.id, strategy_code_version_id=scv.id,
+        mode="paper", status="running", symbol="BTCUSDT", exchange="exchange1", interval="5m",
+    )
+    db_session.add(dep)
+    await db_session.flush()
+
+    orders = [{"id": "order1", "action": "buy", "quantity": 1.0, "order_type": "market"}]
+    results = await dispatch_orders(orders, dep, db_session)
+    await db_session.commit()
+
+    assert len(results) == 1
+    assert results[0]["status"] == "submitted"
+
+    trade_result = await db_session.execute(
+        select(DeploymentTrade).where(DeploymentTrade.deployment_id == dep.id)
+    )
+    trade = trade_result.scalar_one()
+    assert trade.order_id == "order1"
+    assert trade.action == "BUY"
+    assert trade.status == "filled"  # paper mode fills immediately
+
+
+@pytest.mark.asyncio
+async def test_dispatch_orders_rejected_creates_trade_record(db_session):
+    """Rejected orders (unsupported type) still get a trade record with rejected status."""
+    from app.strategy_runner.order_router import dispatch_orders
+
+    user = User(email="dispatch2@test.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    tenant_id = user.id
+
+    sc = StrategyCode(tenant_id=tenant_id, name="Test", description="", code="pass", entrypoint="Strategy", version=1)
+    db_session.add(sc)
+    await db_session.flush()
+
+    scv = StrategyCodeVersion(tenant_id=tenant_id, strategy_code_id=sc.id, version=1, code="pass")
+    db_session.add(scv)
+    await db_session.flush()
+
+    dep = StrategyDeployment(
+        tenant_id=tenant_id, strategy_code_id=sc.id, strategy_code_version_id=scv.id,
+        mode="paper", status="running", symbol="BTCUSDT", exchange="exchange1", interval="5m",
+    )
+    db_session.add(dep)
+    await db_session.flush()
+
+    orders = [{"id": "order2", "action": "buy", "quantity": 1.0, "order_type": "stop"}]
+    results = await dispatch_orders(orders, dep, db_session)
+    await db_session.commit()
+
+    assert results[0]["status"] == "rejected"
+
+    trade_result = await db_session.execute(
+        select(DeploymentTrade).where(DeploymentTrade.deployment_id == dep.id)
+    )
+    trade = trade_result.scalar_one()
+    assert trade.status == "rejected"
