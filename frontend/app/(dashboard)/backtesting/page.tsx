@@ -9,7 +9,7 @@ import { StatCard } from "@/components/shared/StatCard";
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { EquityCurve } from "@/components/charts/EquityCurve";
-import { useStrategies, useBacktests } from "@/lib/hooks/useApi";
+import { useAllStrategies, useBacktests } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatDate, formatCurrency, formatPercent } from "@/lib/utils/formatters";
 import { POLLING_INTERVALS } from "@/lib/utils/constants";
@@ -31,9 +31,34 @@ type BacktestDisplay = {
   trades?: Array<Record<string, unknown>>;
 };
 
+function normalizeBacktest(data: unknown): BacktestDisplay {
+  const raw = data as Record<string, unknown>;
+  const out: BacktestDisplay = {
+    id: String(raw.id ?? ""),
+    status: String(raw.status ?? ""),
+    metrics: raw.metrics as BacktestDisplay["metrics"],
+  };
+  // equity_curve: {timestamp,equity} → {time,value}, deduplicate by time (keep last)
+  const ec = raw.equity_curve as Array<Record<string, unknown>> | undefined;
+  if (ec) {
+    const byTime = new Map<string, { time: string; value: number }>();
+    for (const p of ec) {
+      const time = String(p.time ?? p.timestamp ?? "").split(" ")[0];
+      byTime.set(time, { time, value: Number(p.value ?? p.equity ?? 0) });
+    }
+    out.equity_curve = Array.from(byTime.values());
+  }
+  // trade_log → trades, map fill_price → price
+  const trades = (raw.trades ?? raw.trade_log) as Array<Record<string, unknown>> | undefined;
+  if (trades) {
+    out.trades = trades.map((t) => ({ ...t, price: t.price ?? t.fill_price }));
+  }
+  return out;
+}
+
 export default function BacktestingPage() {
   const toast = useToast();
-  const { data: strategies } = useStrategies();
+  const strategies = useAllStrategies();
   const { data: backtests, mutate: mutateBacktests } = useBacktests();
 
   // Form state
@@ -49,6 +74,7 @@ export default function BacktestingPage() {
   // Run state
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BacktestDisplay | null>(null);
+  const [tabIndex, setTabIndex] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cleanup polling on unmount
@@ -66,7 +92,7 @@ export default function BacktestingPage() {
           if (pollingRef.current) clearInterval(pollingRef.current);
           pollingRef.current = null;
           setRunning(false);
-          setResult(data);
+          setResult(normalizeBacktest(data));
           mutateBacktests();
           if (data.status === "failed") {
             toast({ title: "Backtest failed", status: "error", duration: 3000 });
@@ -115,6 +141,26 @@ export default function BacktestingPage() {
     reader.readAsText(file);
   };
 
+  const handleViewBacktest = async (row: BacktestResultType) => {
+    try {
+      const data = await apiClient<Record<string, unknown>>(`/api/v1/backtests/${row.id}`);
+      setResult(normalizeBacktest(data));
+      // Restore form parameters from config
+      const cfg = data.config as Record<string, unknown> | undefined;
+      if (cfg) {
+        if (cfg.start_date) setStartDate(String(cfg.start_date));
+        if (cfg.end_date) setEndDate(String(cfg.end_date));
+        if (cfg.capital != null) setCapital(Number(cfg.capital));
+        if (cfg.slippage_pct != null) setSlippage(Number(cfg.slippage_pct));
+        if (cfg.commission_pct != null) setCommission(Number(cfg.commission_pct));
+      }
+      if (data.strategy_id) setStrategyId(String(data.strategy_id));
+      setTabIndex(0);
+    } catch {
+      toast({ title: "Failed to load backtest", status: "error", duration: 3000 });
+    }
+  };
+
   const handleDeleteBacktest = async (id: string) => {
     try {
       await apiClient(`/api/v1/backtests/${id}`, { method: "DELETE" });
@@ -126,7 +172,7 @@ export default function BacktestingPage() {
   };
 
   const strategyMap: Record<string, string> = {};
-  (strategies ?? []).forEach((s) => { strategyMap[s.id] = s.name; });
+  strategies.forEach((s) => { strategyMap[s.id] = s.name; });
 
   const historyColumns: Column<BacktestResultType>[] = [
     {
@@ -134,8 +180,8 @@ export default function BacktestingPage() {
       render: (v) => formatDate(String(v ?? "")),
     },
     {
-      key: "strategy_id", header: "Strategy",
-      render: (v) => strategyMap[String(v)] ?? String(v),
+      key: "strategy_name", header: "Strategy",
+      render: (v, row) => String(v ?? strategyMap[String(row.strategy_id)] ?? row.strategy_id ?? "—"),
     },
     {
       key: "status", header: "Status",
@@ -182,7 +228,7 @@ export default function BacktestingPage() {
     <Box>
       <Heading size="lg" mb={6}>Backtesting</Heading>
 
-      <Tabs variant="enclosed">
+      <Tabs variant="enclosed" index={tabIndex} onChange={setTabIndex}>
         <TabList>
           <Tab>Run Backtest</Tab>
           <Tab>History</Tab>
@@ -196,8 +242,8 @@ export default function BacktestingPage() {
                   <FormControl isRequired>
                     <FormLabel>Strategy</FormLabel>
                     <Select placeholder="Select strategy" value={strategyId} onChange={(e) => setStrategyId(e.target.value)}>
-                      {(strategies ?? []).map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
+                      {strategies.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.type})</option>
                       ))}
                     </Select>
                   </FormControl>
@@ -282,12 +328,12 @@ export default function BacktestingPage() {
                 {!running && result && result.status === "completed" && metrics && (
                   <VStack spacing={6} align="stretch">
                     <SimpleGrid columns={{ base: 2, md: 3 }} spacing={4}>
-                      <StatCard label="Total Return" value={formatPercent(metrics.total_return)} />
-                      <StatCard label="Sharpe Ratio" value={metrics.sharpe_ratio.toFixed(2)} />
-                      <StatCard label="Max Drawdown" value={formatPercent(metrics.max_drawdown)} />
-                      <StatCard label="Win Rate" value={formatPercent(metrics.win_rate)} />
-                      <StatCard label="Total Trades" value={String(metrics.total_trades)} />
-                      <StatCard label="Profit Factor" value={metrics.profit_factor.toFixed(2)} />
+                      <StatCard label="Total Return" value={formatPercent(metrics.total_return ?? 0)} />
+                      <StatCard label="Sharpe Ratio" value={(metrics.sharpe_ratio ?? 0).toFixed(2)} />
+                      <StatCard label="Max Drawdown" value={formatPercent(metrics.max_drawdown ?? 0)} />
+                      <StatCard label="Win Rate" value={formatPercent(metrics.win_rate ?? 0)} />
+                      <StatCard label="Total Trades" value={String(metrics.total_trades ?? 0)} />
+                      <StatCard label="Profit Factor" value={(metrics.profit_factor ?? 0).toFixed(2)} />
                     </SimpleGrid>
 
                     {result.equity_curve && result.equity_curve.length > 0 && (
@@ -317,6 +363,7 @@ export default function BacktestingPage() {
             <DataTable<BacktestResultType>
               columns={historyColumns}
               data={backtests ?? []}
+              onRowClick={handleViewBacktest}
               emptyMessage="No backtests yet."
             />
           </TabPanel>

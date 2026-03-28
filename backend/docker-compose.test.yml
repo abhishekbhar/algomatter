@@ -2,9 +2,9 @@ services:
   test-postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: gainguard_test
-      POSTGRES_PASSWORD: gainguard_test
-      POSTGRES_DB: gainguard_test
+      POSTGRES_USER: algomatter_test
+      POSTGRES_PASSWORD: algomatter_test
+      POSTGRES_DB: algomatter_test
     ports:
       - "5433:5432"
 

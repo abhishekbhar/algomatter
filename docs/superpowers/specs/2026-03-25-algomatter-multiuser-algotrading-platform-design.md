@@ -1,8 +1,8 @@
-# GainGuard: Multiuser Algo-Testing Platform — Design Spec
+# AlgoMatter: Multiuser Algo-Testing Platform — Design Spec
 
 ## Overview
 
-GainGuard is a multi-tenant SaaS platform where Indian retail traders sign up, connect their broker/exchange accounts, receive webhook signals from external tools (TradingView, AmiBroker, ChartInk), and execute backtests, paper trades, and live trades.
+AlgoMatter is a multi-tenant SaaS platform where Indian retail traders sign up, connect their broker/exchange accounts, receive webhook signals from external tools (TradingView, AmiBroker, ChartInk), and execute backtests, paper trades, and live trades.
 
 **Target users:** Indian retail traders (NSE/BSE) + cryptocurrency traders via Exchange1.
 
@@ -126,7 +126,7 @@ This is implemented as a SQLAlchemy `SessionEvents.after_begin` hook wired into 
 
 ### Security
 
-- **Encryption key management:** A master key is stored as an environment variable (`GAINGUARD_MASTER_KEY`). Per-tenant encryption keys are derived using HKDF-SHA256 with the master key and `tenant_id` as salt. This means: (a) compromising one tenant's derived key does not expose others, (b) password changes do not affect credential encryption, (c) key rotation requires re-encrypting all credentials (admin operation). For MVP on a single VPS this is acceptable; for production scale, the master key should move to a secrets manager (HashiCorp Vault, AWS KMS).
+- **Encryption key management:** A master key is stored as an environment variable (`ALGOMATTER_MASTER_KEY`). Per-tenant encryption keys are derived using HKDF-SHA256 with the master key and `tenant_id` as salt. This means: (a) compromising one tenant's derived key does not expose others, (b) password changes do not affect credential encryption, (c) key rotation requires re-encrypting all credentials (admin operation). For MVP on a single VPS this is acceptable; for production scale, the master key should move to a secrets manager (HashiCorp Vault, AWS KMS).
 - PostgreSQL RLS policies on every tenant-scoped table (see above)
 - Webhook endpoints use unique per-user secret tokens: `POST /api/v1/webhook/{user_webhook_token}`. Tokens are 32 bytes of `secrets.token_urlsafe()` (256-bit entropy). Users can regenerate tokens from the UI (old token immediately invalidated — user must update TradingView config).
 - **Rate limiting:** Redis-backed sliding window rate limiter, implemented as FastAPI middleware. 60 signals/minute per user. Returns HTTP 429 with `Retry-After` header when exceeded.
@@ -613,7 +613,7 @@ FastAPI auto-generates an OpenAPI 3.1 spec at `/api/v1/openapi.json`. The fronte
 ## Project Structure
 
 ```
-gain-guard/
+algomatter/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                 # FastAPI app entry
@@ -686,7 +686,7 @@ gain-guard/
 - **Environment variables** managed via `.env` file (gitignored). Template provided as `.env.example`.
 - **SSL/TLS:** Caddy or nginx reverse proxy with automatic Let's Encrypt certificates in front of the Docker stack.
 - **Backups:** Daily `pg_dump` via cron to an offsite location (S3-compatible storage or separate VPS).
-- **Secrets:** `GAINGUARD_MASTER_KEY`, `JWT_SECRET`, `DATABASE_URL`, `REDIS_URL` in `.env`. For production, consider moving to Docker secrets or a vault.
+- **Secrets:** `ALGOMATTER_MASTER_KEY`, `JWT_SECRET`, `DATABASE_URL`, `REDIS_URL` in `.env`. For production, consider moving to Docker secrets or a vault.
 
 ---
 

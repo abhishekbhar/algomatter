@@ -1,8 +1,8 @@
-# GainGuard Frontend Design Spec
+# AlgoMatter Frontend Design Spec
 
 ## Overview
 
-Frontend for GainGuard, a multiuser algo-testing SaaS platform for Indian retail traders (NSE/BSE) and crypto traders (Exchange1). The backend API (FastAPI, 27 endpoints across 8 modules) is complete. The frontend provides a data-rich dashboard for active signal monitoring plus deep backtesting/analytics for strategy research.
+Frontend for AlgoMatter, a multiuser algo-testing SaaS platform for Indian retail traders (NSE/BSE) and crypto traders (Exchange1). The backend API (FastAPI, 27 endpoints across 8 modules) is complete. The frontend provides a data-rich dashboard for active signal monitoring plus deep backtesting/analytics for strategy research.
 
 ## Tech Stack
 

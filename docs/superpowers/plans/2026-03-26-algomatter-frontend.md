@@ -1,14 +1,14 @@
-# GainGuard Frontend Implementation Plan
+# AlgoMatter Frontend Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the complete GainGuard frontend — a data-rich trading dashboard with strategy management, backtesting, paper trading, and analytics.
+**Goal:** Build the complete AlgoMatter frontend — a data-rich trading dashboard with strategy management, backtesting, paper trading, and analytics.
 
 **Architecture:** Next.js 14 App Router with Chakra UI v2 for components, SWR for data fetching with polling, TradingView Lightweight Charts for financial visualizations. JWT auth with in-memory access token and localStorage refresh token. Types generated from backend OpenAPI schema.
 
 **Tech Stack:** Next.js 14, TypeScript, Chakra UI v2, TradingView Lightweight Charts, SWR, openapi-typescript, React Testing Library, Jest
 
-**Spec:** `docs/superpowers/specs/2026-03-26-gainguard-frontend-design.md`
+**Spec:** `docs/superpowers/specs/2026-03-26-algomatter-frontend-design.md`
 
 **Backend API base:** `http://localhost:8000` (FastAPI, already running)
 
@@ -116,7 +116,7 @@ frontend/
 - [ ] **Step 1: Initialize Next.js project**
 
 ```bash
-cd /home/abhishekbhar/projects/gain-guard-worktree
+cd /home/abhishekbhar/projects/algomatter-worktree
 npx create-next-app@14 frontend --typescript --app --no-tailwind --no-eslint --no-src-dir --import-alias "@/*"
 ```
 
@@ -737,7 +737,7 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata = {
-  title: "GainGuard",
+  title: "AlgoMatter",
   description: "Multiuser algo-testing platform",
 };
 
@@ -1285,7 +1285,7 @@ export function Sidebar() {
       py={4}
     >
       <Flex justify={isCollapsed ? "center" : "space-between"} align="center" px={3} mb={6}>
-        {!isCollapsed && <Text fontSize="lg" fontWeight="bold">GainGuard</Text>}
+        {!isCollapsed && <Text fontSize="lg" fontWeight="bold">AlgoMatter</Text>}
         <IconButton
           aria-label="Toggle sidebar"
           icon={isCollapsed ? <MdChevronRight /> : <MdChevronLeft />}
@@ -3415,7 +3415,7 @@ cd frontend && npx next dev -p 3000 &
 sleep 5 && curl -s http://localhost:3000 | head -20
 kill %1
 ```
-Expected: HTML response with GainGuard title.
+Expected: HTML response with AlgoMatter title.
 
 - [ ] **Step 6: Commit**
 

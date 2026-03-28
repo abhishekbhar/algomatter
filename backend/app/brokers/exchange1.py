@@ -65,6 +65,20 @@ class Exchange1Broker(BrokerAdapter):
         self._account_cache: tuple[float, list[dict]] | None = None
 
     # ------------------------------------------------------------------
+    # Key helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_pem(raw: str) -> str:
+        """Accept PEM or raw base64 DER and always return PEM."""
+        if "-----BEGIN" in raw:
+            return raw
+        # Strip any whitespace/newlines from raw base64
+        b64 = raw.strip().replace("\n", "").replace("\r", "")
+        lines = [b64[i : i + 64] for i in range(0, len(b64), 64)]
+        return "-----BEGIN PRIVATE KEY-----\n" + "\n".join(lines) + "\n-----END PRIVATE KEY-----\n"
+
+    # ------------------------------------------------------------------
     # Signing helpers
     # ------------------------------------------------------------------
 
@@ -130,14 +144,16 @@ class Exchange1Broker(BrokerAdapter):
 
     async def authenticate(self, credentials: dict) -> bool:
         self._api_key = credentials["api_key"]
-        self._private_key = credentials["private_key"]
+        raw_key = credentials.get("private_key") or credentials["secret_key"]
+        self._private_key = self._normalize_pem(raw_key)
         self._private_key_obj = serialization.load_pem_private_key(
             self._private_key.encode(), password=None
         )
         self._client = httpx.AsyncClient(timeout=10.0)
         try:
             await self._post("/openapi/v1/token", body={}, signed=True)
-        except RuntimeError:
+        except RuntimeError as exc:
+            logger.error("exchange1_auth_failed", error=str(exc))
             return False
         return True
 

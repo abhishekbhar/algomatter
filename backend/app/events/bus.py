@@ -11,12 +11,12 @@ class EventBus:
         entry = {k: json.dumps(v) if not isinstance(v, str) else v for k, v in data.items()}
         approximate = self.max_length > 1000
         msg_id = await self.redis.xadd(
-            f"gainguard:{stream}", entry, maxlen=self.max_length, approximate=approximate
+            f"algomatter:{stream}", entry, maxlen=self.max_length, approximate=approximate
         )
         return msg_id
 
     async def read_recent(self, stream: str, count: int = 10) -> list[dict]:
-        messages = await self.redis.xrevrange(f"gainguard:{stream}", count=count)
+        messages = await self.redis.xrevrange(f"algomatter:{stream}", count=count)
         results = []
         for msg_id, data in messages:
             parsed = {}

@@ -1,4 +1,4 @@
-# GainGuard Phase 1 Backend Implementation Plan
+# AlgoMatter Phase 1 Backend Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, FastAPI, SQLAlchemy 2.0 (async), Alembic, PostgreSQL 16, Redis, ARQ, Pydantic v2, PyJWT, bcrypt, jsonpath-ng, structlog, pytest, httpx
 
-**Spec:** `docs/superpowers/specs/2026-03-25-gainguard-multiuser-algotrading-platform-design.md`
+**Spec:** `docs/superpowers/specs/2026-03-25-algomatter-multiuser-algotrading-platform-design.md`
 
 ---
 
@@ -121,7 +121,7 @@ backend/
 
 ```toml
 [project]
-name = "gainguard"
+name = "algomatter"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -158,10 +158,10 @@ asyncio_mode = "auto"
 - [ ] **Step 2: Create .env.example**
 
 ```env
-GAINGUARD_DATABASE_URL=postgresql+asyncpg://gainguard:gainguard@localhost:5432/gainguard
-GAINGUARD_REDIS_URL=redis://localhost:6379/0
-GAINGUARD_JWT_SECRET=change-me-in-production
-GAINGUARD_MASTER_KEY=change-me-in-production-64-hex-chars
+ALGOMATTER_DATABASE_URL=postgresql+asyncpg://algomatter:algomatter@localhost:5432/algomatter
+ALGOMATTER_REDIS_URL=redis://localhost:6379/0
+ALGOMATTER_JWT_SECRET=change-me-in-production
+ALGOMATTER_MASTER_KEY=change-me-in-production-64-hex-chars
 ```
 
 - [ ] **Step 3: Create app/config.py**
@@ -170,7 +170,7 @@ GAINGUARD_MASTER_KEY=change-me-in-production-64-hex-chars
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql+asyncpg://gainguard:gainguard@localhost:5432/gainguard"
+    database_url: str = "postgresql+asyncpg://algomatter:algomatter@localhost:5432/algomatter"
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "change-me"
     jwt_access_token_expire_minutes: int = 15
@@ -179,7 +179,7 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 60
     max_webhook_payload_bytes: int = 65536
 
-    model_config = {"env_prefix": "GAINGUARD_", "env_file": ".env"}
+    model_config = {"env_prefix": "ALGOMATTER_", "env_file": ".env"}
 
 settings = Settings()
 ```
@@ -196,7 +196,7 @@ async def lifespan(app: FastAPI):
     yield
     # shutdown: close pools
 
-app = FastAPI(title="GainGuard", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AlgoMatter", version="0.1.0", lifespan=lifespan)
 
 @app.get("/api/v1/health")
 async def health():
@@ -210,9 +210,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: gainguard
-      POSTGRES_PASSWORD: gainguard
-      POSTGRES_DB: gainguard
+      POSTGRES_USER: algomatter
+      POSTGRES_PASSWORD: algomatter
+      POSTGRES_DB: algomatter
     ports:
       - "5432:5432"
     volumes:
@@ -268,9 +268,9 @@ services:
   test-postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: gainguard_test
-      POSTGRES_PASSWORD: gainguard_test
-      POSTGRES_DB: gainguard_test
+      POSTGRES_USER: algomatter_test
+      POSTGRES_PASSWORD: algomatter_test
+      POSTGRES_DB: algomatter_test
     ports:
       - "5433:5432"
 
@@ -378,7 +378,7 @@ Expected: Migration file created in `app/db/migrations/versions/`
 - [ ] **Step 6: Run migration and verify tables**
 
 Run: `cd backend && alembic upgrade head`
-Run: `psql postgresql://gainguard:gainguard@localhost:5432/gainguard -c "\dt"`
+Run: `psql postgresql://algomatter:algomatter@localhost:5432/algomatter -c "\dt"`
 Expected: All 10 tables listed.
 
 - [ ] **Step 7: Add RLS policies via manual migration**
@@ -386,8 +386,8 @@ Expected: All 10 tables listed.
 Run: `alembic revision -m "add RLS policies"`
 
 Create migration that:
-1. Creates a restricted app user: `CREATE USER gainguard_app WITH PASSWORD 'gainguard_app'`
-2. Grants necessary permissions to `gainguard_app`
+1. Creates a restricted app user: `CREATE USER algomatter_app WITH PASSWORD 'algomatter_app'`
+2. Grants necessary permissions to `algomatter_app`
 3. Enables RLS on all tenant-scoped tables (all except `users` and `historical_ohlcv`)
 4. Creates `tenant_isolation` policy on each: `USING (tenant_id = current_setting('app.current_tenant_id')::UUID)`
 
@@ -468,7 +468,7 @@ def derive_tenant_key(tenant_id: uuid.UUID) -> bytes:
         algorithm=hashes.SHA256(),
         length=32,
         salt=tenant_id.bytes,
-        info=b"gainguard-credential-encryption",
+        info=b"algomatter-credential-encryption",
     )
     return hkdf.derive(master_key)
 
@@ -491,7 +491,7 @@ def decrypt_credentials(tenant_id: uuid.UUID, data: bytes) -> dict:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd backend && GAINGUARD_MASTER_KEY=$(python -c "import secrets; print(secrets.token_hex(32))") pytest tests/test_crypto.py -v`
+Run: `cd backend && ALGOMATTER_MASTER_KEY=$(python -c "import secrets; print(secrets.token_hex(32))") pytest tests/test_crypto.py -v`
 Expected: 4 passed
 
 - [ ] **Step 5: Commit**
@@ -1640,12 +1640,12 @@ class EventBus:
     async def publish(self, stream: str, data: dict) -> str:
         entry = {k: json.dumps(v) if not isinstance(v, str) else v for k, v in data.items()}
         msg_id = await self.redis.xadd(
-            f"gainguard:{stream}", entry, maxlen=self.max_length, approximate=True
+            f"algomatter:{stream}", entry, maxlen=self.max_length, approximate=True
         )
         return msg_id
 
     async def read_recent(self, stream: str, count: int = 10) -> list[dict]:
-        messages = await self.redis.xrevrange(f"gainguard:{stream}", count=count)
+        messages = await self.redis.xrevrange(f"algomatter:{stream}", count=count)
         results = []
         for msg_id, data in messages:
             parsed = {}
@@ -2486,7 +2486,7 @@ Ensure all 4 services defined (postgres, redis, api, worker) with proper health 
 ```yaml
 postgres:
   healthcheck:
-    test: ["CMD-SHELL", "pg_isready -U gainguard"]
+    test: ["CMD-SHELL", "pg_isready -U algomatter"]
     interval: 5s
     retries: 5
 

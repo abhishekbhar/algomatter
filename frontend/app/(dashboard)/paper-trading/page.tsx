@@ -9,7 +9,7 @@ import { useState, useMemo } from "react";
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { usePaperSessions, useStrategies } from "@/lib/hooks/useApi";
+import { usePaperSessions, useAllStrategies } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatDate, formatCurrency } from "@/lib/utils/formatters";
 import type { PaperSession } from "@/lib/api/types";
@@ -18,7 +18,7 @@ export default function PaperTradingPage() {
   const router = useRouter();
   const toast = useToast();
   const { data: sessions, isLoading, mutate } = usePaperSessions();
-  const { data: strategies } = useStrategies();
+  const strategies = useAllStrategies();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [statusFilter, setStatusFilter] = useState("all");
   const [newStrategyId, setNewStrategyId] = useState("");
@@ -27,7 +27,7 @@ export default function PaperTradingPage() {
 
   const strategyMap = useMemo(() => {
     const map: Record<string, string> = {};
-    (strategies ?? []).forEach((s) => { map[s.id] = s.name; });
+    strategies.forEach((s) => { map[s.id] = s.name; });
     return map;
   }, [strategies]);
 
@@ -49,7 +49,7 @@ export default function PaperTradingPage() {
     try {
       await apiClient("/api/v1/paper-trading/sessions", {
         method: "POST",
-        body: { strategy_id: newStrategyId, initial_capital: newCapital },
+        body: { strategy_id: newStrategyId, capital: newCapital },
       });
       toast({ title: "Session started", status: "success", duration: 3000 });
       mutate();
@@ -120,8 +120,8 @@ export default function PaperTradingPage() {
                   value={newStrategyId}
                   onChange={(e) => setNewStrategyId(e.target.value)}
                 >
-                  {(strategies ?? []).map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
+                  {strategies.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.type})</option>
                   ))}
                 </Select>
               </FormControl>

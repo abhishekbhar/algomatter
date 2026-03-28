@@ -13,7 +13,7 @@ def derive_tenant_key(tenant_id: uuid.UUID) -> bytes:
         algorithm=hashes.SHA256(),
         length=32,
         salt=tenant_id.bytes,
-        info=b"gainguard-credential-encryption",
+        info=b"algomatter-credential-encryption",
     )
     return hkdf.derive(master_key)
 

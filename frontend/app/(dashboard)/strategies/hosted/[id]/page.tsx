@@ -253,7 +253,10 @@ export default function StrategyEditorPage() {
               </FormControl>
               <FormControl>
                 <FormLabel>Exchange</FormLabel>
-                <Input value={deployExchange} onChange={(e) => setDeployExchange(e.target.value)} />
+                <Select value={deployExchange} onChange={(e) => setDeployExchange(e.target.value)}>
+                  <option value="BINANCE">Binance</option>
+                  <option value="EXCHANGE1">Exchange1</option>
+                </Select>
               </FormControl>
               <FormControl>
                 <FormLabel>Interval</FormLabel>
