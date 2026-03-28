@@ -9,6 +9,7 @@ import { apiClient } from "@/lib/api/client";
 const BROKER_FIELDS: Record<string, string[]> = {
   zerodha: ["api_key", "api_secret", "user_id"],
   exchange1: ["api_key", "secret_key"],
+  binance_testnet: ["api_key", "api_secret"],
 };
 
 export default function NewBrokerPage() {
@@ -59,6 +60,7 @@ export default function NewBrokerPage() {
             >
               <option value="zerodha">Zerodha</option>
               <option value="exchange1">Exchange1</option>
+              <option value="binance_testnet">Binance Testnet</option>
             </Select>
           </FormControl>
 
