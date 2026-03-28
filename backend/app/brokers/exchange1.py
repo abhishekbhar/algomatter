@@ -224,14 +224,71 @@ class Exchange1Broker(BrokerAdapter):
             pending_quantity=pending_quantity,
         )
 
-    async def get_positions(self) -> list[Position]:
-        raise NotImplementedError
-
-    async def get_holdings(self) -> list[Holding]:
-        raise NotImplementedError
+    async def _get_balance_data(self) -> list[dict]:
+        """Fetch account balances with a 2-second TTL cache."""
+        now = time.time()
+        if self._account_cache and (now - self._account_cache[0]) < 2.0:
+            return self._account_cache[1]
+        data = await self._get("/openapi/v1/balance", signed=True)
+        accounts = data.get("data", [])
+        self._account_cache = (now, accounts)
+        return accounts
 
     async def get_balance(self) -> AccountBalance:
-        raise NotImplementedError
+        """Return USDT balance from Exchange1 account."""
+        accounts = await self._get_balance_data()
+        for acc in accounts:
+            if acc.get("currency") == "USDT":
+                return AccountBalance(
+                    available=Decimal(str(acc.get("available", "0"))),
+                    used_margin=Decimal(str(acc.get("hold", "0"))),
+                    total=Decimal(str(acc.get("total", "0"))),
+                )
+        return AccountBalance(available=Decimal("0"), used_margin=Decimal("0"), total=Decimal("0"))
+
+    async def get_positions(self) -> list[Position]:
+        """Return non-quote, non-zero asset balances as positions."""
+        accounts = await self._get_balance_data()
+        positions: list[Position] = []
+        for acc in accounts:
+            currency = acc.get("currency", "")
+            if currency in QUOTE_ASSETS:
+                continue
+            total = Decimal(str(acc.get("total", "0")))
+            if total == 0:
+                continue
+            positions.append(
+                Position(
+                    symbol=currency,
+                    exchange="EXCHANGE1",
+                    action="BUY",
+                    quantity=total,
+                    entry_price=Decimal("0"),
+                    product_type="DELIVERY",
+                )
+            )
+        return positions
+
+    async def get_holdings(self) -> list[Holding]:
+        """Return non-quote, non-zero asset balances as holdings."""
+        accounts = await self._get_balance_data()
+        holdings: list[Holding] = []
+        for acc in accounts:
+            currency = acc.get("currency", "")
+            if currency in QUOTE_ASSETS:
+                continue
+            total = Decimal(str(acc.get("total", "0")))
+            if total == 0:
+                continue
+            holdings.append(
+                Holding(
+                    symbol=currency,
+                    exchange="EXCHANGE1",
+                    quantity=total,
+                    average_price=Decimal("0"),
+                )
+            )
+        return holdings
 
     async def get_quotes(self, symbols: list[str]) -> list[Quote]:
         raise NotImplementedError

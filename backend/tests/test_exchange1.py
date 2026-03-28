@@ -479,3 +479,106 @@ class TestCancelAndStatus:
         await broker.close()
 
         assert status.status == "open"
+
+
+# ---------------------------------------------------------------------------
+# Portfolio / Balance
+# ---------------------------------------------------------------------------
+
+_BALANCE_RESPONSE = {
+    "code": 200,
+    "data": [
+        {"currency": "USDT", "available": "5000.00", "hold": "1000.00", "total": "6000.00"},
+        {"currency": "BTC", "available": "0.5", "hold": "0.1", "total": "0.6"},
+        {"currency": "ETH", "available": "10.0", "hold": "0.0", "total": "10.0"},
+        {"currency": "USDC", "available": "2000.00", "hold": "0.0", "total": "2000.00"},
+        {"currency": "SOL", "available": "0.0", "hold": "0.0", "total": "0.0"},
+    ],
+}
+
+
+class TestPortfolio:
+    """Tests for get_balance, get_positions, get_holdings, and account caching."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_balance_extracts_usdt(self):
+        respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
+            return_value=httpx.Response(200, json=_BALANCE_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        balance = await broker.get_balance()
+        await broker.close()
+
+        assert balance.available == Decimal("5000.00")
+        assert balance.used_margin == Decimal("1000.00")
+        assert balance.total == Decimal("6000.00")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_positions_excludes_quote_and_zero(self):
+        respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
+            return_value=httpx.Response(200, json=_BALANCE_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        positions = await broker.get_positions()
+        await broker.close()
+
+        symbols = {p.symbol for p in positions}
+        assert "BTC" in symbols
+        assert "ETH" in symbols
+        assert "USDT" not in symbols
+        assert "USDC" not in symbols
+        assert "SOL" not in symbols  # zero balance
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_positions_fields(self):
+        respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
+            return_value=httpx.Response(200, json=_BALANCE_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        positions = await broker.get_positions()
+        await broker.close()
+
+        btc = next(p for p in positions if p.symbol == "BTC")
+        assert btc.quantity == Decimal("0.6")
+        assert btc.exchange == "EXCHANGE1"
+        assert btc.action == "BUY"
+        assert btc.entry_price == Decimal("0")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_holdings(self):
+        respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
+            return_value=httpx.Response(200, json=_BALANCE_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        holdings = await broker.get_holdings()
+        await broker.close()
+
+        symbols = {h.symbol for h in holdings}
+        assert symbols == {"BTC", "ETH"}
+
+        btc = next(h for h in holdings if h.symbol == "BTC")
+        assert btc.quantity == Decimal("0.6")
+        assert btc.exchange == "EXCHANGE1"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_account_cache_prevents_duplicate_calls(self):
+        route = respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
+            return_value=httpx.Response(200, json=_BALANCE_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        await broker.get_balance()
+        await broker.get_positions()
+        await broker.get_holdings()
+        await broker.close()
+
+        assert route.call_count == 1
