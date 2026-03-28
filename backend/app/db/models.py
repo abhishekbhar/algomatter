@@ -164,8 +164,11 @@ class PaperTradingSession(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False
     )
-    strategy_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("strategies.id"), nullable=False
+    strategy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strategies.id"), nullable=True
+    )
+    strategy_code_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strategy_codes.id"), nullable=True
     )
     initial_capital: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False)
     current_balance: Mapped[float] = mapped_column(Numeric(20, 8), nullable=False)
@@ -331,6 +334,9 @@ class StrategyDeployment(Base):
     state: Mapped["DeploymentState | None"] = relationship(
         back_populates="deployment", uselist=False, passive_deletes=True
     )
+    trades: Mapped[list["DeploymentTrade"]] = relationship(
+        back_populates="deployment", passive_deletes=True
+    )
 
 
 class DeploymentState(Base):
@@ -370,3 +376,37 @@ class DeploymentLog(Base):
     )
     level: Mapped[str] = mapped_column(String(10), default="info")
     message: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class DeploymentTrade(Base):
+    __tablename__ = "deployment_trades"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    deployment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strategy_deployments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    order_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    broker_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    action: Mapped[str] = mapped_column(String(10), nullable=False)
+    quantity: Mapped[float] = mapped_column(Numeric, nullable=False)
+    order_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    price: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    trigger_price: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    fill_price: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    fill_quantity: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="submitted")
+    is_manual: Mapped[bool] = mapped_column(default=False)
+    realized_pnl: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    filled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    deployment: Mapped["StrategyDeployment"] = relationship(back_populates="trades")
