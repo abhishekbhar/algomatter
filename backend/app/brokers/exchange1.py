@@ -129,10 +129,24 @@ class Exchange1Broker(BrokerAdapter):
     # ------------------------------------------------------------------
 
     async def authenticate(self, credentials: dict) -> bool:
-        raise NotImplementedError
+        self._api_key = credentials["api_key"]
+        self._private_key = credentials["private_key"]
+        self._private_key_obj = serialization.load_pem_private_key(
+            self._private_key.encode(), password=None
+        )
+        self._client = httpx.AsyncClient(timeout=10.0)
+        try:
+            await self._post("/openapi/v1/token", body={}, signed=True)
+        except RuntimeError:
+            return False
+        return True
 
     async def verify_connection(self) -> bool:
-        raise NotImplementedError
+        try:
+            await self._get("/openapi/v1/balance", signed=True)
+        except (RuntimeError, httpx.HTTPError):
+            return False
+        return True
 
     async def place_order(self, order: OrderRequest) -> OrderResponse:
         raise NotImplementedError
@@ -159,4 +173,13 @@ class Exchange1Broker(BrokerAdapter):
         raise NotImplementedError
 
     async def close(self) -> None:
-        raise NotImplementedError
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+        if self._binance_client is not None:
+            await self._binance_client.aclose()
+            self._binance_client = None
+        self._api_key = ""
+        self._private_key = ""
+        self._private_key_obj = None
+        self._account_cache = None

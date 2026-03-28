@@ -128,3 +128,86 @@ class TestSigning:
             padding.PKCS1v15(),
             hashes.SHA256(),
         )
+
+
+# ---------------------------------------------------------------------------
+# Connection
+# ---------------------------------------------------------------------------
+
+
+class TestConnection:
+    """Tests for authenticate, verify_connection, and close."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_authenticate_success(self):
+        respx.post(f"{BASE_URL}/openapi/v1/token").mock(
+            return_value=httpx.Response(200, json={"code": 200, "msg": "success"})
+        )
+
+        broker = Exchange1Broker()
+        with patch("app.brokers.exchange1.time.time", return_value=1700000000.0):
+            result = await broker.authenticate(
+                {"api_key": "test-key", "private_key": _TEST_PRIVATE_KEY_PEM}
+            )
+
+        assert result is True
+        assert broker._api_key == "test-key"
+        assert broker._private_key_obj is not None
+        await broker.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_authenticate_bad_credentials(self):
+        respx.post(f"{BASE_URL}/openapi/v1/token").mock(
+            return_value=httpx.Response(401, json={"code": 401, "msg": "Unauthorized"})
+        )
+
+        broker = Exchange1Broker()
+        with patch("app.brokers.exchange1.time.time", return_value=1700000000.0):
+            result = await broker.authenticate(
+                {"api_key": "bad-key", "private_key": _TEST_PRIVATE_KEY_PEM}
+            )
+
+        assert result is False
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_verify_connection_success(self):
+        respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
+            return_value=httpx.Response(200, json={"code": 200, "data": []})
+        )
+
+        broker = _make_authenticated_broker()
+        result = await broker.verify_connection()
+        await broker.close()
+
+        assert result is True
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_verify_connection_failure(self):
+        respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
+            return_value=httpx.Response(401, json={"code": 401, "msg": "Unauthorized"})
+        )
+
+        broker = _make_authenticated_broker()
+        result = await broker.verify_connection()
+        await broker.close()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_close_clears_secrets(self):
+        broker = _make_authenticated_broker()
+        broker._binance_client = httpx.AsyncClient()
+        broker._account_cache = (time.time(), [])
+
+        await broker.close()
+
+        assert broker._api_key == ""
+        assert broker._private_key == ""
+        assert broker._private_key_obj is None
+        assert broker._client is None
+        assert broker._binance_client is None
+        assert broker._account_cache is None
