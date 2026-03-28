@@ -420,3 +420,76 @@ async def test_get_comparison_no_promotion_chain(client, db_session):
         headers={"Authorization": f"Bearer {tokens['access_token']}"},
     )
     assert resp.status_code == 404
+
+
+## ─── Manual Order + Cancel Order endpoint tests ─────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_manual_order_paper_mode(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session, mode="paper", status="running")
+
+    resp = await client.post(
+        f"/api/v1/deployments/{deployment['id']}/manual-order",
+        json={"action": "buy", "quantity": 1.0, "order_type": "market"},
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["is_manual"] is True
+    assert data["action"] == "BUY"
+    assert data["status"] == "filled"
+
+
+@pytest.mark.asyncio
+async def test_manual_order_rejects_backtest(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session, mode="backtest", status="running")
+
+    resp = await client.post(
+        f"/api/v1/deployments/{deployment['id']}/manual-order",
+        json={"action": "buy", "quantity": 1.0},
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_cancel_order_endpoint(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session, mode="paper", status="running")
+
+    dep_id = uuid.UUID(deployment["id"])
+    result = await db_session.execute(select(StrategyDeployment).where(StrategyDeployment.id == dep_id))
+    dep = result.scalar_one()
+
+    # Update the existing DeploymentState with open order
+    state_result = await db_session.execute(
+        select(DeploymentState).where(DeploymentState.deployment_id == dep.id)
+    )
+    state = state_result.scalar_one_or_none()
+    if state:
+        state.open_orders = [{"id": "cancel_me", "action": "buy", "quantity": 1.0}]
+    else:
+        state = DeploymentState(
+            deployment_id=dep.id, tenant_id=dep.tenant_id,
+            position=None, portfolio={}, open_orders=[{"id": "cancel_me"}],
+        )
+        db_session.add(state)
+
+    trade = DeploymentTrade(
+        tenant_id=dep.tenant_id, deployment_id=dep.id, order_id="cancel_me",
+        action="BUY", quantity=1.0, order_type="LIMIT", status="submitted", is_manual=False,
+    )
+    db_session.add(trade)
+    await db_session.commit()
+
+    resp = await client.post(
+        f"/api/v1/deployments/{deployment['id']}/cancel-order",
+        json={"order_id": "cancel_me"},
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "cancelled"

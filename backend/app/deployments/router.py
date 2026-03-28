@@ -19,6 +19,8 @@ Endpoints:
     GET    /api/v1/deployments/{deployment_id}/logs             Get logs (paginated)
     GET    /api/v1/deployments/{deployment_id}/metrics          Get deployment metrics
     GET    /api/v1/deployments/{deployment_id}/comparison       Compare live vs backtest
+    POST   /api/v1/deployments/{deployment_id}/manual-order    Place manual order
+    POST   /api/v1/deployments/{deployment_id}/cancel-order    Cancel an order
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from app.db.models import (
 )
 from app.deployments.schemas import (
     AggregateStatsResponse,
+    CancelOrderRequest,
     ComparisonResponse,
     CreateDeploymentRequest,
     DeploymentLogEntry,
@@ -50,12 +53,14 @@ from app.deployments.schemas import (
     DeploymentResponse,
     DeploymentResultResponse,
     DeploymentTradeResponse,
+    ManualOrderRequest,
     MetricsResponse,
     PositionResponse,
     PromoteRequest,
     RecentTradesResponse,
     TradesResponse,
 )
+from app.strategy_runner.order_router import translate_order, ORDER_TYPE_MAP
 from app.deployments.trade_service import compute_live_metrics
 from app.deployments.service import (
     check_deployment_limits,
@@ -1075,3 +1080,161 @@ async def get_deployment_comparison(
         backtest_deployment_id=str(backtest_dep.id),
         promotion_chain=list(reversed(chain)),
     )
+
+
+# ---------------------------------------------------------------------------
+# Manual order
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/api/v1/deployments/{deployment_id}/manual-order",
+    response_model=DeploymentTradeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def place_manual_order(
+    deployment_id: uuid.UUID,
+    body: ManualOrderRequest,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    result = await session.execute(
+        select(StrategyDeployment)
+        .where(StrategyDeployment.id == deployment_id, StrategyDeployment.tenant_id == tenant_id)
+        .options(selectinload(StrategyDeployment.strategy_code))
+    )
+    dep = result.scalar_one_or_none()
+    if not dep:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+    if dep.status not in ("running", "paused"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Deployment not active")
+    if dep.mode == "backtest":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot place manual orders on backtests")
+
+    order_type_mapped = ORDER_TYPE_MAP.get(body.order_type, "MARKET")
+
+    trade = DeploymentTrade(
+        tenant_id=tenant_id,
+        deployment_id=dep.id,
+        order_id=uuid.uuid4().hex[:16],
+        action=body.action.upper(),
+        quantity=body.quantity,
+        order_type=order_type_mapped,
+        price=body.price,
+        trigger_price=body.trigger_price,
+        status="submitted",
+        is_manual=True,
+    )
+
+    if dep.mode == "paper":
+        trade.status = "filled"
+        trade.fill_quantity = body.quantity
+        trade.filled_at = datetime.now(UTC)
+    elif dep.mode == "live":
+        # Handle broker dispatch directly (NOT via dispatch_orders to avoid duplicate trade)
+        translated = translate_order(
+            {"action": body.action, "quantity": body.quantity, "order_type": body.order_type,
+             "price": body.price, "trigger_price": body.trigger_price},
+            dep,
+        )
+        if translated is None:
+            trade.status = "rejected"
+        else:
+            try:
+                from app.crypto.encryption import decrypt_credentials
+                from app.brokers.factory import get_broker
+                from app.db.models import BrokerConnection
+
+                bc = await session.get(BrokerConnection, dep.broker_connection_id)
+                if not bc:
+                    trade.status = "rejected"
+                else:
+                    credentials = decrypt_credentials(bc.tenant_id, bc.credentials)
+                    broker = await get_broker(bc.broker_type, credentials)
+                    try:
+                        broker_result = await broker.place_order(translated)
+                        trade.fill_price = broker_result.get("fill_price")
+                        trade.fill_quantity = broker_result.get("fill_quantity")
+                        trade.broker_order_id = broker_result.get("order_id")
+                        trade.status = "filled"
+                        trade.filled_at = datetime.now(UTC)
+                    finally:
+                        await broker.close()
+            except Exception:
+                trade.status = "failed"
+
+    session.add(trade)
+    await session.commit()
+    await session.refresh(trade)
+
+    strategy_name = dep.strategy_code.name if dep.strategy_code else ""
+    return _trade_to_response(trade, strategy_name, dep.symbol)
+
+
+# ---------------------------------------------------------------------------
+# Cancel order
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/api/v1/deployments/{deployment_id}/cancel-order",
+    response_model=DeploymentTradeResponse,
+)
+async def cancel_order(
+    deployment_id: uuid.UUID,
+    body: CancelOrderRequest,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    result = await session.execute(
+        select(StrategyDeployment)
+        .where(StrategyDeployment.id == deployment_id, StrategyDeployment.tenant_id == tenant_id)
+        .options(selectinload(StrategyDeployment.strategy_code))
+    )
+    dep = result.scalar_one_or_none()
+    if not dep:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deployment not found")
+
+    trade_result = await session.execute(
+        select(DeploymentTrade).where(
+            DeploymentTrade.deployment_id == deployment_id,
+            DeploymentTrade.order_id == body.order_id,
+            DeploymentTrade.tenant_id == tenant_id,
+        )
+    )
+    trade = trade_result.scalar_one_or_none()
+    if not trade:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trade not found")
+
+    # For live mode, call broker cancel
+    if dep.mode == "live" and trade.broker_order_id:
+        try:
+            from app.crypto.encryption import decrypt_credentials
+            from app.brokers.factory import get_broker
+            from app.db.models import BrokerConnection
+
+            bc = await session.get(BrokerConnection, dep.broker_connection_id)
+            if bc:
+                credentials = decrypt_credentials(bc.tenant_id, bc.credentials)
+                broker = await get_broker(bc.broker_type, credentials)
+                try:
+                    await broker.cancel_order(trade.broker_order_id)
+                finally:
+                    await broker.close()
+        except Exception:
+            pass  # Best effort cancel
+
+    trade.status = "cancelled"
+
+    # Remove from open_orders in state
+    state = await session.get(DeploymentState, deployment_id)
+    if state and state.open_orders:
+        state.open_orders = [o for o in state.open_orders if o.get("id") != body.order_id]
+
+    await session.commit()
+    await session.refresh(trade)
+
+    strategy_name = dep.strategy_code.name if dep.strategy_code else ""
+    return _trade_to_response(trade, strategy_name, dep.symbol)
