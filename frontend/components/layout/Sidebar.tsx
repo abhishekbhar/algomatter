@@ -11,6 +11,7 @@ import {
   MdHistory,
   MdAnalytics,
   MdSettings,
+  MdCode,
   MdChevronLeft,
   MdChevronRight,
 } from "react-icons/md";
@@ -18,7 +19,8 @@ import { NavItem } from "./NavItem";
 
 const NAV_ITEMS = [
   { icon: MdDashboard, label: "Dashboard", href: "/" },
-  { icon: MdShowChart, label: "Strategies", href: "/strategies" },
+  { icon: MdShowChart, label: "Webhook Strategies", href: "/strategies" },
+  { icon: MdCode, label: "Hosted Strategies", href: "/strategies/hosted" },
   { icon: MdWebhook, label: "Webhooks", href: "/webhooks" },
   { icon: MdAccountBalance, label: "Brokers", href: "/brokers" },
   { icon: MdPlayArrow, label: "Paper Trading", href: "/paper-trading" },
@@ -51,7 +53,7 @@ export function Sidebar() {
       >
         {!isCollapsed && (
           <Text fontSize="lg" fontWeight="bold">
-            GainGuard
+            AlgoMatter
           </Text>
         )}
         <IconButton

@@ -13,9 +13,10 @@ import {
   useWebhookSignals,
   useStrategies,
   usePaperSessions,
+  useActiveDeployments,
 } from "@/lib/hooks/useApi";
 import { formatCurrency } from "@/lib/utils/formatters";
-import type { WebhookSignal } from "@/lib/api/types";
+import type { WebhookSignal, Deployment } from "@/lib/api/types";
 
 const signalColumns: Column<WebhookSignal>[] = [
   { key: "status", header: "Status",
@@ -49,6 +50,7 @@ export default function DashboardPage() {
   const { data: signals, isLoading: signalsLoading } = useWebhookSignals();
   const { data: strategies, isLoading: strategiesLoading } = useStrategies();
   const { data: paperSessions, isLoading: paperLoading } = usePaperSessions();
+  const { data: activeDeployments, isLoading: deploymentsLoading } = useActiveDeployments();
 
   const activeSessions = (paperSessions ?? []).filter(
     (s) => s.status === "running"
@@ -62,7 +64,7 @@ export default function DashboardPage() {
           <Button size="sm" colorScheme="blue" onClick={() => router.push("/strategies/new")}>
             New Strategy
           </Button>
-          <Button size="sm" variant="outline" onClick={() => router.push("/backtests")}>
+          <Button size="sm" variant="outline" onClick={() => router.push("/backtesting")}>
             Run Backtest
           </Button>
           <Button size="sm" variant="outline" onClick={() => router.push("/brokers")}>
@@ -147,6 +149,52 @@ export default function DashboardPage() {
           )}
         </Box>
       </SimpleGrid>
+
+      {/* Active Hosted Strategies */}
+      <Box bg={cardBg} p={4} borderRadius="lg" shadow="sm" mt={6}>
+        <Flex justify="space-between" align="center" mb={3}>
+          <Heading size="sm">Active Hosted Strategies</Heading>
+          <Button size="xs" variant="outline" onClick={() => router.push("/strategies/hosted")}>
+            View All
+          </Button>
+        </Flex>
+        {deploymentsLoading ? (
+          <Text color="gray.500">Loading...</Text>
+        ) : (activeDeployments ?? []).length === 0 ? (
+          <Text color="gray.500" textAlign="center" py={4}>
+            No active strategies.{" "}
+            <Button variant="link" colorScheme="blue" size="sm" onClick={() => router.push("/strategies/hosted/new")}>
+              Create one to get started
+            </Button>
+          </Text>
+        ) : (
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={3}>
+            {(activeDeployments ?? []).map((d) => (
+              <Box
+                key={d.id}
+                p={3}
+                borderRadius="md"
+                border="1px"
+                borderColor="gray.200"
+                cursor="pointer"
+                _hover={{ bg: hoverBg }}
+                onClick={() => router.push(`/strategies/hosted/${d.strategy_code_id}`)}
+              >
+                <Flex justify="space-between" align="center" mb={1}>
+                  <Text fontWeight="medium" fontSize="sm">{d.symbol}</Text>
+                  <StatusBadge
+                    variant={d.mode === "live" ? "error" : d.mode === "paper" ? "warning" : "info"}
+                    text={d.mode}
+                  />
+                </Flex>
+                <Text fontSize="xs" color="gray.500">
+                  {d.interval} · {d.exchange}
+                </Text>
+              </Box>
+            ))}
+          </SimpleGrid>
+        )}
+      </Box>
     </Box>
   );
 }
