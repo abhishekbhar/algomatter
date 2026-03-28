@@ -22,6 +22,7 @@ dependencies = [
     "email-validator>=2.0.0",
     "python-multipart>=0.0.9",
     "nautilus_trader>=1.200.0",
+    "apscheduler>=4.0.0a5",
 ]
 
 [project.optional-dependencies]
