@@ -36,9 +36,13 @@ Structured trade records for live/paper deployments. Replaces parsing `Deploymen
 
 **RLS policy:** Same pattern as other tables — `tenant_id = current_setting('app.current_tenant')::uuid`.
 
+### Modify Existing: `DeploymentResponse`
+
+Add `strategy_name` field to `DeploymentResponse` schema (and `_to_response()` helper in the deployment router). This requires eager-loading or joining the `StrategyCode.name` via the existing `strategy_code` relationship on `StrategyDeployment`. The frontend needs this to display strategy names on cards without a separate lookup.
+
 ### Integration with Existing Models
 
-- `order_router.dispatch_orders()` writes a `DeploymentTrade` row on each order dispatch (status="submitted") and updates on fill (status="filled", fill_price, fill_quantity, filled_at, realized_pnl).
+- `order_router.dispatch_orders()` writes a `DeploymentTrade` row on each order dispatch (status="submitted") and updates on fill (status="filled", fill_price, fill_quantity, filled_at, realized_pnl). Import `DeploymentTrade` in `order_router.py`. The session is already passed into `dispatch_orders()` by `tick_runner.run_tick()` — the caller is responsible for committing after the function returns.
 - Manual order endpoints also write here with `is_manual=true`.
 - `DeploymentState.open_orders` (JSON) continues to be the subprocess protocol's state — `DeploymentTrade` is the source of truth for history.
 
@@ -148,7 +152,7 @@ Compute live performance metrics from trade history.
 
 **Logic:**
 - For completed backtests: return stored `StrategyResult.metrics`
-- For paper/live: compute from `DeploymentTrade` records using `compute_metrics()` from `app.analytics.metrics`
+- For paper/live: compute from `DeploymentTrade` records using `compute_metrics()` from `app.analytics.metrics`. Note: `compute_metrics()` does not currently return `best_trade` or `worst_trade` — these two fields must be computed separately from the trade records (max/min of `realized_pnl`). Do NOT modify `compute_metrics()` to avoid side effects on existing backtest results.
 - Build equity curve on-the-fly from chronological trade PnLs + initial capital from `deployment.config`
 
 #### `GET /api/v1/deployments/{deployment_id}/comparison`
@@ -191,6 +195,22 @@ Aggregate stats across all active deployments for the current user.
 - Aggregate P&L = total equity - total deployed capital
 - Count today's `DeploymentTrade` records
 
+#### `GET /api/v1/deployments/recent-trades`
+
+Get recent trades across all active deployments for the current user. Avoids N separate API calls on the command center.
+
+**Query params:** `limit` (default 20)
+
+**Response:**
+```json
+{
+  "trades": [DeploymentTradeResponse],
+  "total": 150
+}
+```
+
+**Logic:** Query `DeploymentTrade` for all deployments belonging to the current tenant, ordered by `created_at DESC`, limited.
+
 ### Modified Endpoint
 
 #### `POST /api/v1/deployments/stop-all` (enhanced)
@@ -199,7 +219,7 @@ Current behavior: stops all active deployments.
 
 **Enhancement:** Also cancel all open orders for each stopped deployment. For live deployments, call `broker.cancel_order()` for each open order. Update corresponding `DeploymentTrade` records to "cancelled".
 
-Return enhanced response:
+Return enhanced response (note: this changes the response shape from the current `{"stopped": N}` — add `orders_cancelled` as an additional field to maintain backward compatibility):
 ```json
 {
   "stopped": 3,
@@ -361,7 +381,7 @@ Realized PnL is computed when a position-closing trade fills:
 **Data sources:**
 - Stats: `GET /api/v1/deployments/aggregate-stats` (2s polling)
 - Deployment cards: `GET /api/v1/deployments?status=running` + `GET /api/v1/deployments?status=paused` (2s polling)
-- Recent trades: `GET /api/v1/deployments/{id}/trades` for each active deployment, merged and sorted (5s polling)
+- Recent trades: `GET /api/v1/deployments/recent-trades?limit=20` (5s polling)
 - Position info per card: `GET /api/v1/deployments/{id}/position` (2s polling)
 
 **Components:**
