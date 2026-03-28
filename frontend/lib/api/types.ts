@@ -91,6 +91,7 @@ export interface PaperSessionDetail extends PaperSession {
 export interface BacktestResult {
   id: string;
   strategy_id: string | null;
+  strategy_name: string | null;
   status: string;
   trade_log: Array<Record<string, unknown>> | null;
   equity_curve: Array<Record<string, unknown>> | null;
@@ -136,4 +137,153 @@ export interface AnalyticsTrade {
 
 export interface HealthStatus {
   status: string;
+}
+
+// Hosted Strategies
+export interface HostedStrategy {
+  id: string;
+  name: string;
+  description: string | null;
+  code: string;
+  version: number;
+  entrypoint: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategyVersion {
+  id: string;
+  version: number;
+  code: string;
+  created_at: string;
+}
+
+export interface StrategyTemplate {
+  name: string;
+  description: string;
+  code: string;
+  params: Record<string, unknown>;
+}
+
+// Deployments
+export interface Deployment {
+  id: string;
+  strategy_name: string;
+  strategy_code_id: string;
+  strategy_code_version_id: string;
+  mode: "backtest" | "paper" | "live";
+  status: "pending" | "running" | "paused" | "stopped" | "completed" | "failed";
+  symbol: string;
+  exchange: string;
+  product_type: string;
+  interval: string;
+  broker_connection_id: string | null;
+  cron_expression: string | null;
+  config: Record<string, unknown>;
+  params: Record<string, unknown>;
+  promoted_from_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  stopped_at: string | null;
+}
+
+export interface DeploymentResult {
+  id: string;
+  deployment_id: string;
+  trade_log: unknown[] | null;
+  equity_curve: { timestamp: string; equity: number }[] | null;
+  metrics: StrategyMetrics | null;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface DeploymentLogEntry {
+  id: string;
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+export interface DeploymentLogsResponse {
+  logs: DeploymentLogEntry[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+// Live Trading
+export interface DeploymentTrade {
+  id: string;
+  deployment_id: string;
+  order_id: string;
+  broker_order_id: string | null;
+  action: string;
+  quantity: number;
+  order_type: string;
+  price: number | null;
+  trigger_price: number | null;
+  fill_price: number | null;
+  fill_quantity: number | null;
+  status: string;
+  is_manual: boolean;
+  realized_pnl: number | null;
+  created_at: string;
+  filled_at: string | null;
+  strategy_name: string;
+  symbol: string;
+}
+
+export interface TradesResponse {
+  trades: DeploymentTrade[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface RecentTradesResponse {
+  trades: DeploymentTrade[];
+  total: number;
+}
+
+export interface PositionInfo {
+  deployment_id: string;
+  position: { quantity: number; avg_entry_price: number; unrealized_pnl: number } | null;
+  portfolio: { balance: number; equity: number; available_margin: number };
+  open_orders: { id: string; action: string; quantity: number; order_type?: string; price?: number }[];
+  open_orders_count: number;
+  total_realized_pnl: number;
+}
+
+export interface LiveMetrics {
+  total_return: number;
+  win_rate: number;
+  profit_factor: number;
+  sharpe_ratio: number;
+  max_drawdown: number;
+  total_trades: number;
+  avg_trade_pnl: number;
+  best_trade: number | null;
+  worst_trade: number | null;
+}
+
+export interface ComparisonData {
+  backtest: LiveMetrics;
+  current: LiveMetrics;
+  deltas: Record<string, number>;
+  backtest_deployment_id: string;
+  promotion_chain: string[];
+}
+
+export interface AggregateStats {
+  total_deployed_capital: number;
+  aggregate_pnl: number;
+  aggregate_pnl_pct: number;
+  active_deployments: number;
+  todays_trades: number;
+}
+
+export interface StopAllResponse {
+  deployments: Deployment[];
+  orders_cancelled: number;
 }

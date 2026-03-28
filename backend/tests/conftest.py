@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -40,6 +42,9 @@ async def client():
     """Async test client for FastAPI."""
     async with _test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Provide a mock redis so endpoints that publish messages work in tests
+    mock_redis = AsyncMock()
+    app.state.redis = mock_redis
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

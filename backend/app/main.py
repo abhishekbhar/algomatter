@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 from sqlalchemy import text
@@ -11,6 +12,9 @@ from app.backtesting.router import router as backtest_router
 from app.brokers.router import router as broker_router
 from app.config import settings
 from app.db.session import async_session_factory
+from app.deployments.router import router as deployment_router
+from app.hosted_strategies.router import router as hosted_strategy_router
+from app.hosted_strategies.router import template_router
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.rate_limiter import RateLimiterMiddleware
 from app.paper_trading.router import router as paper_trading_router
@@ -29,7 +33,21 @@ async def lifespan(app: FastAPI):
     await redis_pool.aclose()
 
 
-app = FastAPI(title="GainGuard", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AlgoMatter", version="0.1.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.add_middleware(RateLimiterMiddleware, redis=redis_pool)
 app.add_middleware(RequestLoggingMiddleware)
 app.include_router(auth_router)
@@ -40,6 +58,9 @@ app.include_router(webhook_public_router)
 app.include_router(webhook_config_router)
 app.include_router(paper_trading_router)
 app.include_router(analytics_router)
+app.include_router(hosted_strategy_router)
+app.include_router(template_router)
+app.include_router(deployment_router)
 
 
 @app.get("/api/v1/health")
