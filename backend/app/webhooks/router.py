@@ -2,6 +2,7 @@ import json
 import secrets
 import time
 import uuid
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -62,6 +63,7 @@ async def receive_webhook(
         rule_result_str = None
         rule_detail = None
         execution_result = None
+        execution_detail = None
 
         try:
             signal = apply_mapping(payload, strategy.mapping_template)
@@ -112,6 +114,46 @@ async def receive_webhook(
                     )
                 else:
                     execution_result = "no_active_session"
+            elif strategy.mode == "live":
+                if not strategy.broker_connection_id:
+                    execution_result = "no_broker_connection"
+                else:
+                    from app.brokers.factory import get_broker
+                    from app.brokers.base import OrderRequest as BrokerOrderRequest
+                    from app.crypto.encryption import decrypt_credentials
+                    from app.db.models import BrokerConnection
+
+                    bc_result = await session.execute(
+                        select(BrokerConnection).where(
+                            BrokerConnection.id == strategy.broker_connection_id,
+                            BrokerConnection.tenant_id == user.id,
+                        )
+                    )
+                    bc = bc_result.scalar_one_or_none()
+                    if not bc:
+                        execution_result = "broker_connection_not_found"
+                    else:
+                        creds = decrypt_credentials(user.id, bc.credentials)
+                        broker = await get_broker(bc.broker_type, creds)
+                        try:
+                            order_req = BrokerOrderRequest(
+                                symbol=signal.symbol,
+                                exchange=signal.exchange,
+                                action=signal.action,
+                                quantity=signal.quantity,
+                                order_type=signal.order_type or "MARKET",
+                                price=signal.price or Decimal("0"),
+                                product_type=signal.product_type or "DELIVERY",
+                                trigger_price=signal.trigger_price,
+                            )
+                            result = await broker.place_order(order_req)
+                            execution_result = result.status
+                            execution_detail = result.model_dump(mode="json")
+                        except Exception as exc:
+                            execution_result = "broker_error"
+                            execution_detail = {"error": str(exc)}
+                        finally:
+                            await broker.close()
         else:
             rule_result_str = "blocked_by_rule"
             rule_detail = rule_out.reason
@@ -124,6 +166,7 @@ async def receive_webhook(
             rule_result=rule_result_str,
             rule_detail=rule_detail,
             execution_result=execution_result,
+            execution_detail=execution_detail,
             processing_ms=int((time.perf_counter() - start_time) * 1000),
         )
         session.add(ws)
