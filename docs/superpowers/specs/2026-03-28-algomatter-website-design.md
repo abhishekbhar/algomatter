@@ -12,7 +12,7 @@ A standalone marketing website for Algomatter, a crypto algorithmic trading SaaS
 
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
-| Framework | Next.js 14 (App Router) | Familiar from existing app, SSR/SSG for SEO, React ecosystem |
+| Framework | Next.js 15 (App Router) | Familiar from existing app, SSR/SSG for SEO, React ecosystem, latest stable |
 | Styling | Tailwind CSS | Full design control for custom gradients, glows, animations — better suited than Chakra for marketing pages |
 | Content | MDX | Docs and changelog authored in markdown with embedded components |
 | Animations | Framer Motion | Scroll-driven reveals, count-up numbers, equity curve draw animations |
@@ -347,7 +347,7 @@ website-mvp/
 
 **Routing:** Next.js App Router with static generation for all marketing pages. Docs use `generateStaticParams` to pre-render all MDX content at build time.
 
-**MDX processing:** `@next/mdx` or `contentlayer` for docs and changelog content. Custom MDX components for code blocks, callouts, and interactive elements.
+**MDX processing:** `next-mdx-remote` for docs and changelog content. Custom MDX components for code blocks, callouts, and interactive elements. (Note: contentlayer is unmaintained and incompatible with recent Next.js versions.)
 
 **Animations:** Framer Motion for:
 - `ScrollReveal` — intersection observer triggers fade-up animations
