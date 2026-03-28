@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: gainguard
-      POSTGRES_PASSWORD: gainguard
-      POSTGRES_DB: gainguard
+      POSTGRES_USER: algomatter
+      POSTGRES_PASSWORD: algomatter
+      POSTGRES_DB: algomatter
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gainguard"]
+      test: ["CMD-SHELL", "pg_isready -U algomatter"]
       interval: 5s
       retries: 5
 
@@ -28,10 +28,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      GAINGUARD_DATABASE_URL: postgresql+asyncpg://gainguard:gainguard@postgres:5432/gainguard
-      GAINGUARD_REDIS_URL: redis://redis:6379/0
-      GAINGUARD_JWT_SECRET: dev-secret-change-in-production
-      GAINGUARD_MASTER_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      ALGOMATTER_DATABASE_URL: postgresql+asyncpg://algomatter:algomatter@postgres:5432/algomatter
+      ALGOMATTER_REDIS_URL: redis://redis:6379/0
+      ALGOMATTER_JWT_SECRET: dev-secret-change-in-production
+      ALGOMATTER_MASTER_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,16 +42,35 @@ services:
   worker:
     build: .
     environment:
-      GAINGUARD_DATABASE_URL: postgresql+asyncpg://gainguard:gainguard@postgres:5432/gainguard
-      GAINGUARD_REDIS_URL: redis://redis:6379/0
-      GAINGUARD_JWT_SECRET: dev-secret-change-in-production
-      GAINGUARD_MASTER_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      ALGOMATTER_DATABASE_URL: postgresql+asyncpg://algomatter:algomatter@postgres:5432/algomatter
+      ALGOMATTER_REDIS_URL: redis://redis:6379/0
+      ALGOMATTER_JWT_SECRET: dev-secret-change-in-production
+      ALGOMATTER_MASTER_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: ["arq", "worker.WorkerSettings"]
+
+  strategy-runner:
+    build: .
+    command: python -m app.strategy_runner.main
+    environment:
+      ALGOMATTER_DATABASE_URL: postgresql+asyncpg://algomatter:algomatter@postgres:5432/algomatter
+      ALGOMATTER_REDIS_URL: redis://redis:6379/0
+      ALGOMATTER_JWT_SECRET: ${ALGOMATTER_JWT_SECRET:-dev-secret-change-in-production}
+      ALGOMATTER_MASTER_KEY: "${ALGOMATTER_MASTER_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
 
 volumes:
   pgdata:
