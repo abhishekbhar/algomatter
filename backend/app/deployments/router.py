@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, func
@@ -384,7 +384,6 @@ async def get_aggregate_stats(
     aggregate_pnl = total_equity - total_capital if total_capital > 0 else 0
     aggregate_pnl_pct = (aggregate_pnl / total_capital * 100) if total_capital > 0 else 0
 
-    from datetime import date
     today_start = datetime(date.today().year, date.today().month, date.today().day, tzinfo=UTC)
     count_result = await session.execute(
         select(func.count()).where(
@@ -1150,6 +1149,7 @@ async def place_manual_order(
 
     if dep.mode == "paper":
         trade.status = "filled"
+        trade.fill_price = body.price
         trade.fill_quantity = body.quantity
         trade.filled_at = datetime.now(UTC)
     elif dep.mode == "live":
@@ -1182,7 +1182,9 @@ async def place_manual_order(
                         trade.filled_at = datetime.now(UTC)
                     finally:
                         await broker.close()
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Failed to dispatch manual order: {e}")
                 trade.status = "failed"
 
     session.add(trade)
@@ -1244,8 +1246,9 @@ async def cancel_order(
                     await broker.cancel_order(trade.broker_order_id)
                 finally:
                     await broker.close()
-        except Exception:
-            pass  # Best effort cancel
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to cancel order at broker: {e}")
 
     trade.status = "cancelled"
 

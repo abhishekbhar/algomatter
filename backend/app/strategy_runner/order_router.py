@@ -62,6 +62,7 @@ async def dispatch_orders(orders: list[dict], deployment: StrategyDeployment, se
 
         if deployment.mode == "paper":
             trade.status = "filled"
+            trade.fill_price = order.get("price") or translated.get("price")
             trade.fill_quantity = order["quantity"]
             trade.filled_at = datetime.now(timezone.utc)
             results.append({"order_id": order["id"], "status": "submitted", "broker_order": translated})

@@ -159,10 +159,16 @@ export function useDeploymentResults(id: string | undefined) {
 }
 
 export function useActiveDeployments() {
-  return useApiGet<Deployment[]>(
+  const { data: running, ...runningRest } = useApiGet<Deployment[]>(
     "/api/v1/deployments?status=running",
-    { refreshInterval: POLLING_INTERVALS.PAPER_TRADING }
+    { refreshInterval: 2000 }
   );
+  const { data: paused } = useApiGet<Deployment[]>(
+    "/api/v1/deployments?status=paused",
+    { refreshInterval: 2000 }
+  );
+  const data = [...(running ?? []), ...(paused ?? [])];
+  return { data: data.length > 0 || running || paused ? data : undefined, ...runningRest };
 }
 
 export function useDeploymentLogs(id: string | undefined, offset = 0, limit = 50) {
