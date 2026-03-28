@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { Navbar } from "@/components/layout/Navbar";
+import { Footer } from "@/components/layout/Footer";
 import { siteConfig } from "@/lib/config";
 import "./globals.css";
 
@@ -31,7 +33,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <Navbar />
+        {children}
+        <Footer />
+      </body>
     </html>
   );
 }
