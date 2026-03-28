@@ -194,7 +194,10 @@ class TestHostedStrategyLifecycle:
             "/api/v1/deployments/stop-all", headers=headers
         )
         assert resp.status_code == 200
-        stopped_list = resp.json()
+        stop_all_data = resp.json()
+        assert "deployments" in stop_all_data
+        assert "orders_cancelled" in stop_all_data
+        stopped_list = stop_all_data["deployments"]
         assert len(stopped_list) >= 1
         assert all(d["status"] == "stopped" for d in stopped_list)
 
