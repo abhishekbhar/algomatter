@@ -219,7 +219,8 @@ Current behavior: stops all active deployments.
 
 **Enhancement:** Also cancel all open orders for each stopped deployment. For live deployments, call `broker.cancel_order()` for each open order. Update corresponding `DeploymentTrade` records to "cancelled".
 
-Return enhanced response. The current endpoint returns `list[DeploymentResponse]`. Keep this shape and wrap it with additional metadata:
+The current endpoint returns `list[DeploymentResponse]` (response_model). Change response_model to `StopAllResponse` (defined in Section 3). This is a **breaking change** — update the frontend caller at the same time.
+
 ```json
 {
   "deployments": [DeploymentResponse, ...],
@@ -301,7 +302,15 @@ class AggregateStatsResponse(BaseModel):
     aggregate_pnl_pct: float
     active_deployments: int
     todays_trades: int
+
+class StopAllResponse(BaseModel):
+    deployments: list[DeploymentResponse]
+    orders_cancelled: int
 ```
+
+### Modified Schema
+
+Add `strategy_name: str` field to the existing `DeploymentResponse` in `app/deployments/schemas.py`. Update `_deployment_to_response()` helper to populate it via eager-loaded `deployment.strategy_code.name`.
 
 ---
 
@@ -384,7 +393,7 @@ Realized PnL is computed when a position-closing trade fills:
 - Stats: `GET /api/v1/deployments/aggregate-stats` (2s polling)
 - Deployment cards: `GET /api/v1/deployments?status=running` + `GET /api/v1/deployments?status=paused` (2s polling)
 - Recent trades: `GET /api/v1/deployments/recent-trades?limit=20` (5s polling)
-- Position info per card: `GET /api/v1/deployments/{id}/position` (2s polling)
+- Position info per card: `GET /api/v1/deployments/{id}/position` (2s polling) — note: this is N requests for N deployments; acceptable for ≤5 active deployments per user (current limit), but if limits increase consider a batched endpoint
 
 **Components:**
 - `AggregateStats` — 4 StatCards in a row
@@ -584,7 +593,7 @@ Import `MdTrendingUp` from `react-icons/md`.
 - The existing Paper Trading section (`/paper-trading`) remains unchanged — it serves webhook-driven strategies with simulated sessions
 - The Live Trading section covers hosted strategy deployments in both paper and live modes
 - The existing deployments page at `/strategies/hosted/[id]/deployments` remains as a strategy-scoped view; Live Trading is a cross-strategy operations view
-- The existing `POST /api/v1/deployments/stop-all` endpoint is enhanced (cancel orders) but remains backward-compatible
+- The existing `POST /api/v1/deployments/stop-all` endpoint is enhanced (cancel orders) with a new `StopAllResponse` response shape — this is a breaking change, update the frontend caller at the same time
 
 ---
 
