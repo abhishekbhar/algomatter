@@ -16,6 +16,7 @@ from app.db.models import (
     DeploymentState,
     User,
 )
+from tests.conftest import create_authenticated_user
 
 
 @pytest.mark.asyncio
@@ -72,3 +73,48 @@ async def test_deployment_trade_model_create(db_session):
     assert row.is_manual is False
     assert row.realized_pnl is None
     assert row.fill_price is None
+
+
+async def _create_strategy_and_deployment(client, tokens, db_session, *, mode="paper", status="running"):
+    """Helper: create a hosted strategy + deployment, return (strategy, deployment) dicts."""
+    resp = await client.post(
+        "/api/v1/hosted-strategies",
+        json={"name": "SMA Bot", "description": "test", "code": "class Strategy:\n  pass", "entrypoint": "Strategy"},
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 201
+    strategy = resp.json()
+
+    resp = await client.post(
+        f"/api/v1/hosted-strategies/{strategy['id']}/deployments",
+        json={"mode": mode, "symbol": "BTCUSDT", "exchange": "exchange1", "interval": "5m"},
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 201
+    deployment = resp.json()
+
+    if status != "pending":
+        from sqlalchemy import update
+        from app.db.models import StrategyDeployment
+        await db_session.execute(
+            update(StrategyDeployment)
+            .where(StrategyDeployment.id == uuid.UUID(deployment["id"]))
+            .values(status=status, started_at=datetime.now(UTC))
+        )
+        await db_session.commit()
+
+    return strategy, deployment
+
+
+@pytest.mark.asyncio
+async def test_deployment_response_includes_strategy_name(client, db_session):
+    tokens = await create_authenticated_user(client)
+    strategy, deployment = await _create_strategy_and_deployment(client, tokens, db_session)
+    resp = await client.get(
+        f"/api/v1/deployments/{deployment['id']}",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "strategy_name" in data
+    assert data["strategy_name"] == "SMA Bot"

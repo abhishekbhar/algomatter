@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth.deps import get_current_user, get_tenant_session
 from app.db.models import (
@@ -59,6 +60,7 @@ router = APIRouter(tags=["deployments"])
 def _deployment_to_response(dep: StrategyDeployment) -> DeploymentResponse:
     return DeploymentResponse(
         id=str(dep.id),
+        strategy_name=dep.strategy_code.name if dep.strategy_code else "",
         strategy_code_id=str(dep.strategy_code_id),
         strategy_code_version_id=str(dep.strategy_code_version_id),
         mode=dep.mode,
@@ -158,7 +160,14 @@ async def create_deployment(
         session.add(state)
 
     await session.commit()
-    await session.refresh(deployment)
+
+    # Re-fetch with strategy_code eagerly loaded
+    result = await session.execute(
+        select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
+        .where(StrategyDeployment.id == deployment.id)
+    )
+    deployment = result.scalar_one()
 
     # Enqueue for strategy-runner
     redis = request.app.state.redis
@@ -208,6 +217,7 @@ async def list_strategy_deployments(
 
     result = await session.execute(
         select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
         .where(
             StrategyDeployment.strategy_code_id == strategy_id,
             StrategyDeployment.tenant_id == tenant_id,
@@ -233,8 +243,10 @@ async def list_all_deployments(
     session: AsyncSession = Depends(get_tenant_session),
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
-    query = select(StrategyDeployment).where(
-        StrategyDeployment.tenant_id == tenant_id,
+    query = (
+        select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
+        .where(StrategyDeployment.tenant_id == tenant_id)
     )
     if status_filter:
         query = query.where(StrategyDeployment.status == status_filter)
@@ -260,7 +272,9 @@ async def get_deployment(
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
     result = await session.execute(
-        select(StrategyDeployment).where(
+        select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
+        .where(
             StrategyDeployment.id == deployment_id,
             StrategyDeployment.tenant_id == tenant_id,
         )
@@ -288,7 +302,9 @@ async def pause_deployment(
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
     result = await session.execute(
-        select(StrategyDeployment).where(
+        select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
+        .where(
             StrategyDeployment.id == deployment_id,
             StrategyDeployment.tenant_id == tenant_id,
         )
@@ -329,7 +345,9 @@ async def resume_deployment(
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
     result = await session.execute(
-        select(StrategyDeployment).where(
+        select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
+        .where(
             StrategyDeployment.id == deployment_id,
             StrategyDeployment.tenant_id == tenant_id,
         )
@@ -375,7 +393,9 @@ async def stop_deployment(
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
     result = await session.execute(
-        select(StrategyDeployment).where(
+        select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
+        .where(
             StrategyDeployment.id == deployment_id,
             StrategyDeployment.tenant_id == tenant_id,
         )
@@ -416,7 +436,9 @@ async def stop_all_deployments(
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
     result = await session.execute(
-        select(StrategyDeployment).where(
+        select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
+        .where(
             StrategyDeployment.tenant_id == tenant_id,
             StrategyDeployment.status.in_(["pending", "running", "paused"]),
         )
@@ -466,7 +488,9 @@ async def promote_deployment(
 
     tenant_id = uuid.UUID(current_user["user_id"])
     result = await session.execute(
-        select(StrategyDeployment).where(
+        select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
+        .where(
             StrategyDeployment.id == deployment_id,
             StrategyDeployment.tenant_id == tenant_id,
         )
@@ -523,7 +547,14 @@ async def promote_deployment(
     session.add(state)
 
     await session.commit()
-    await session.refresh(new_deployment)
+
+    # Re-fetch with strategy_code eagerly loaded
+    result = await session.execute(
+        select(StrategyDeployment)
+        .options(selectinload(StrategyDeployment.strategy_code))
+        .where(StrategyDeployment.id == new_deployment.id)
+    )
+    new_deployment = result.scalar_one()
 
     return _deployment_to_response(new_deployment)
 
