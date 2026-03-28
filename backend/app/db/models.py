@@ -7,13 +7,15 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Integer,
     LargeBinary,
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -133,6 +135,12 @@ class StrategyResult(Base):
     strategy_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("strategies.id"), nullable=True
     )
+    deployment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strategy_deployments.id"), nullable=True
+    )
+    strategy_code_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strategy_code_versions.id"), nullable=True
+    )
     result_type: Mapped[str] = mapped_column(String(50), nullable=False)
     trade_log: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     equity_curve: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -225,3 +233,140 @@ class PaperTrade(Base):
     executed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class StrategyCode(Base):
+    __tablename__ = "strategy_codes"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    code: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    entrypoint: Mapped[str] = mapped_column(String(100), default="Strategy")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    versions: Mapped[list["StrategyCodeVersion"]] = relationship(
+        back_populates="strategy_code"
+    )
+    deployments: Mapped[list["StrategyDeployment"]] = relationship(
+        back_populates="strategy_code"
+    )
+
+
+class StrategyCodeVersion(Base):
+    __tablename__ = "strategy_code_versions"
+    __table_args__ = (
+        UniqueConstraint("strategy_code_id", "version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    strategy_code_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strategy_codes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    code: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    strategy_code: Mapped["StrategyCode"] = relationship(
+        back_populates="versions"
+    )
+
+
+class StrategyDeployment(Base):
+    __tablename__ = "strategy_deployments"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    strategy_code_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strategy_codes.id"), nullable=False, index=True
+    )
+    strategy_code_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strategy_code_versions.id"), nullable=False
+    )
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
+    product_type: Mapped[str] = mapped_column(String(20), default="DELIVERY")
+    interval: Mapped[str] = mapped_column(String(10), nullable=False)
+    broker_connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("broker_connections.id"), nullable=True
+    )
+    cron_expression: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    promoted_from_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("strategy_deployments.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    stopped_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    strategy_code: Mapped["StrategyCode"] = relationship(
+        back_populates="deployments"
+    )
+    code_version: Mapped["StrategyCodeVersion"] = relationship()
+    state: Mapped["DeploymentState | None"] = relationship(
+        back_populates="deployment", uselist=False
+    )
+
+
+class DeploymentState(Base):
+    __tablename__ = "deployment_states"
+
+    deployment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strategy_deployments.id"), primary_key=True
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    position: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    open_orders: Mapped[dict] = mapped_column(JSON, default=list)
+    portfolio: Mapped[dict] = mapped_column(JSON, default=dict)
+    user_state: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    deployment: Mapped["StrategyDeployment"] = relationship(
+        back_populates="state"
+    )
+
+
+class DeploymentLog(Base):
+    __tablename__ = "deployment_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
+    deployment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("strategy_deployments.id"), nullable=False, index=True
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    level: Mapped[str] = mapped_column(String(10), default="info")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
