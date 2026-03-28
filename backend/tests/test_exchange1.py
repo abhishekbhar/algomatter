@@ -211,3 +211,141 @@ class TestConnection:
         assert broker._client is None
         assert broker._binance_client is None
         assert broker._account_cache is None
+
+
+# ---------------------------------------------------------------------------
+# Orders
+# ---------------------------------------------------------------------------
+
+def _market_order(symbol: str = "BTCUSDT", action: str = "BUY", qty: str = "0.001") -> OrderRequest:
+    return OrderRequest(
+        symbol=symbol, exchange="EXCHANGE1", action=action,
+        quantity=Decimal(qty), order_type="MARKET", price=Decimal("0"), product_type="DELIVERY",
+    )
+
+
+def _limit_order(
+    symbol: str = "BTCUSDT", action: str = "BUY", qty: str = "0.001", price: str = "66000.00",
+) -> OrderRequest:
+    return OrderRequest(
+        symbol=symbol, exchange="EXCHANGE1", action=action,
+        quantity=Decimal(qty), order_type="LIMIT", price=Decimal(price), product_type="DELIVERY",
+    )
+
+
+class TestOrders:
+    """Tests for place_order."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_place_market_buy(self):
+        route = respx.post(f"{BASE_URL}/openapi/v1/spot/order/create").mock(
+            return_value=httpx.Response(200, json={"code": 200, "msg": "success", "data": 855188})
+        )
+
+        broker = _make_authenticated_broker()
+        resp = await broker.place_order(_market_order())
+        await broker.close()
+
+        assert route.called
+        import json
+        body = json.loads(route.calls[0].request.content)
+        assert body["symbol"] == "btcusdt"
+        assert body["positionType"] == "market"
+        assert body["quantity"] == "0.001"
+        assert body["quantityUnit"] == "cont"
+
+        assert resp.order_id == "855188"
+        assert resp.status == "filled"
+        assert resp.fill_price == Decimal("0")
+        assert resp.fill_quantity == Decimal("0")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_place_market_sell(self):
+        route = respx.post(f"{BASE_URL}/openapi/v1/spot/order/close").mock(
+            return_value=httpx.Response(200, json={"code": 200, "msg": "success", "data": 855189})
+        )
+
+        broker = _make_authenticated_broker()
+        resp = await broker.place_order(_market_order(action="SELL"))
+        await broker.close()
+
+        assert route.called
+        import json
+        body = json.loads(route.calls[0].request.content)
+        assert body["symbol"] == "btcusdt"
+        assert body["positionType"] == "market"
+        assert body["closeNum"] == "0.001"
+        assert "quantity" not in body
+
+        assert resp.order_id == "855189"
+        assert resp.status == "filled"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_place_limit_buy(self):
+        route = respx.post(f"{BASE_URL}/openapi/v1/spot/order/create").mock(
+            return_value=httpx.Response(200, json={"code": 200, "msg": "success", "data": 855190})
+        )
+
+        broker = _make_authenticated_broker()
+        resp = await broker.place_order(_limit_order())
+        await broker.close()
+
+        import json
+        body = json.loads(route.calls[0].request.content)
+        assert body["positionType"] == "limit"
+        assert body["price"] == "66000.00"
+        assert body["quantity"] == "0.001"
+
+        assert resp.order_id == "855190"
+        assert resp.status == "open"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_place_limit_sell(self):
+        route = respx.post(f"{BASE_URL}/openapi/v1/spot/order/close").mock(
+            return_value=httpx.Response(200, json={"code": 200, "msg": "success", "data": 855191})
+        )
+
+        broker = _make_authenticated_broker()
+        resp = await broker.place_order(_limit_order(action="SELL"))
+        await broker.close()
+
+        import json
+        body = json.loads(route.calls[0].request.content)
+        assert body["positionType"] == "limit"
+        assert body["price"] == "66000.00"
+        assert body["closeNum"] == "0.001"
+
+        assert resp.order_id == "855191"
+        assert resp.status == "open"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_place_order_rejected(self):
+        respx.post(f"{BASE_URL}/openapi/v1/spot/order/create").mock(
+            return_value=httpx.Response(200, json={"code": 400, "msg": "Insufficient balance"})
+        )
+
+        broker = _make_authenticated_broker()
+        resp = await broker.place_order(_market_order())
+        await broker.close()
+
+        assert resp.status == "rejected"
+        assert "Insufficient balance" in resp.message
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_place_order_http_error(self):
+        respx.post(f"{BASE_URL}/openapi/v1/spot/order/create").mock(
+            return_value=httpx.Response(500, text="Internal Server Error")
+        )
+
+        broker = _make_authenticated_broker()
+        resp = await broker.place_order(_market_order())
+        await broker.close()
+
+        assert resp.status == "rejected"
+        assert "500" in resp.message

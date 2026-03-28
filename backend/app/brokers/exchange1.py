@@ -149,7 +149,47 @@ class Exchange1Broker(BrokerAdapter):
         return True
 
     async def place_order(self, order: OrderRequest) -> OrderResponse:
-        raise NotImplementedError
+        """Place a spot order on Exchange1.
+
+        BUY → POST /openapi/v1/spot/order/create
+        SELL → POST /openapi/v1/spot/order/close
+        """
+        symbol = order.symbol.lower()
+        position_type = "market" if order.order_type == "MARKET" else "limit"
+
+        if order.action == "BUY":
+            path = "/openapi/v1/spot/order/create"
+            body: dict[str, Any] = {
+                "symbol": symbol,
+                "positionType": position_type,
+                "quantity": str(order.quantity),
+                "quantityUnit": "cont",
+            }
+        else:
+            path = "/openapi/v1/spot/order/close"
+            body = {
+                "symbol": symbol,
+                "positionType": position_type,
+                "closeNum": str(order.quantity),
+            }
+
+        if order.order_type == "LIMIT":
+            body["price"] = str(order.price)
+
+        try:
+            data = await self._post(path, body=body, signed=True)
+        except RuntimeError as exc:
+            return OrderResponse(order_id="", status="rejected", message=str(exc))
+
+        order_id = str(data.get("data", ""))
+        status = "filled" if order.order_type == "MARKET" else "open"
+
+        return OrderResponse(
+            order_id=order_id,
+            status=status,
+            fill_price=Decimal("0"),
+            fill_quantity=Decimal("0"),
+        )
 
     async def cancel_order(self, order_id: str) -> bool:
         raise NotImplementedError
