@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import time
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -248,7 +249,6 @@ class TestOrders:
         await broker.close()
 
         assert route.called
-        import json
         body = json.loads(route.calls[0].request.content)
         assert body["symbol"] == "btcusdt"
         assert body["positionType"] == "market"
@@ -272,7 +272,6 @@ class TestOrders:
         await broker.close()
 
         assert route.called
-        import json
         body = json.loads(route.calls[0].request.content)
         assert body["symbol"] == "btcusdt"
         assert body["positionType"] == "market"
@@ -293,7 +292,6 @@ class TestOrders:
         resp = await broker.place_order(_limit_order())
         await broker.close()
 
-        import json
         body = json.loads(route.calls[0].request.content)
         assert body["positionType"] == "limit"
         assert body["price"] == "66000.00"
@@ -313,7 +311,6 @@ class TestOrders:
         resp = await broker.place_order(_limit_order(action="SELL"))
         await broker.close()
 
-        import json
         body = json.loads(route.calls[0].request.content)
         assert body["positionType"] == "limit"
         assert body["price"] == "66000.00"
@@ -371,7 +368,6 @@ class TestCancelAndStatus:
         await broker.close()
 
         assert result is True
-        import json
         body = json.loads(route.calls[0].request.content)
         assert body["id"] == "855188"
 

@@ -125,7 +125,7 @@ class Exchange1Broker(BrokerAdapter):
         return data
 
     # ------------------------------------------------------------------
-    # Stubs (implemented in subsequent tasks)
+    # Connection lifecycle
     # ------------------------------------------------------------------
 
     async def authenticate(self, credentials: dict) -> bool:
@@ -292,16 +292,15 @@ class Exchange1Broker(BrokerAdapter):
 
     async def get_quotes(self, symbols: list[str]) -> list[Quote]:
         """Fetch orderbook for each symbol and return best bid/ask with mid price."""
-        assert self._client is not None
         quotes: list[Quote] = []
         for symbol in symbols:
-            resp = await self._client.get(
-                f"{BASE_URL}/openapi/v1/spot/orderbook",
-                params={"symbol": symbol.lower()},
-            )
-            if resp.status_code >= 400:
+            try:
+                data = await self._get(
+                    "/openapi/v1/spot/orderbook",
+                    params={"symbol": symbol.lower()},
+                )
+            except RuntimeError:
                 continue
-            data = resp.json()
             book = data.get("data", data)
             asks = book.get("asks", [])
             bids = book.get("bids", [])
@@ -347,6 +346,7 @@ class Exchange1Broker(BrokerAdapter):
                     "limit": 1000,
                 },
             )
+            resp.raise_for_status()
             data = resp.json()
             if not data:
                 break
