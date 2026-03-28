@@ -17,10 +17,11 @@ Endpoints:
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,6 +91,7 @@ def _deployment_to_response(dep: StrategyDeployment) -> DeploymentResponse:
 async def create_deployment(
     strategy_id: uuid.UUID,
     body: CreateDeploymentRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -157,6 +159,23 @@ async def create_deployment(
 
     await session.commit()
     await session.refresh(deployment)
+
+    # Enqueue for strategy-runner
+    redis = request.app.state.redis
+    if body.mode == "backtest":
+        await redis.lpush(
+            "strategy-runner:queue",
+            json.dumps({"deployment_id": str(deployment.id), "type": "backtest"}),
+        )
+    elif body.mode in ("paper", "live"):
+        await redis.publish(
+            "strategy-runner:deployments",
+            json.dumps({
+                "action": "register",
+                "deployment_id": str(deployment.id),
+                "cron_expression": body.cron_expression or "*/5 * * * *",
+            }),
+        )
 
     return _deployment_to_response(deployment)
 
@@ -263,6 +282,7 @@ async def get_deployment(
 )
 async def pause_deployment(
     deployment_id: uuid.UUID,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -282,6 +302,13 @@ async def pause_deployment(
     deployment.status = "paused"
     await session.commit()
     await session.refresh(deployment)
+
+    redis = request.app.state.redis
+    await redis.publish(
+        "strategy-runner:deployments",
+        json.dumps({"action": "unregister", "deployment_id": str(deployment_id)}),
+    )
+
     return _deployment_to_response(deployment)
 
 
@@ -296,6 +323,7 @@ async def pause_deployment(
 )
 async def resume_deployment(
     deployment_id: uuid.UUID,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -316,6 +344,17 @@ async def resume_deployment(
     deployment.started_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(deployment)
+
+    redis = request.app.state.redis
+    await redis.publish(
+        "strategy-runner:deployments",
+        json.dumps({
+            "action": "register",
+            "deployment_id": str(deployment_id),
+            "cron_expression": deployment.cron_expression or "*/5 * * * *",
+        }),
+    )
+
     return _deployment_to_response(deployment)
 
 
@@ -330,6 +369,7 @@ async def resume_deployment(
 )
 async def stop_deployment(
     deployment_id: uuid.UUID,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -350,6 +390,13 @@ async def stop_deployment(
     deployment.stopped_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(deployment)
+
+    redis = request.app.state.redis
+    await redis.publish(
+        "strategy-runner:deployments",
+        json.dumps({"action": "unregister", "deployment_id": str(deployment_id)}),
+    )
+
     return _deployment_to_response(deployment)
 
 
@@ -363,6 +410,7 @@ async def stop_deployment(
     response_model=list[DeploymentResponse],
 )
 async def stop_all_deployments(
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -375,10 +423,20 @@ async def stop_all_deployments(
     )
     deployments = result.scalars().all()
     now = datetime.now(UTC)
+    stopped_ids = []
     for dep in deployments:
         dep.status = "stopped"
         dep.stopped_at = now
+        stopped_ids.append(str(dep.id))
     await session.commit()
+
+    redis = request.app.state.redis
+    for d_id in stopped_ids:
+        await redis.publish(
+            "strategy-runner:deployments",
+            json.dumps({"action": "unregister", "deployment_id": d_id}),
+        )
+
     # Refresh all
     stopped = []
     for dep in deployments:
