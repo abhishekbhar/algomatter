@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from httpx import Response
 
 from app.brokers.base import OrderRequest
-from app.brokers.exchange1 import BASE_URL, Exchange1Broker
+from app.brokers.exchange1 import BASE_URL, BINANCE_URL, Exchange1Broker
 
 # ---------------------------------------------------------------------------
 # Shared test RSA key pair
@@ -582,3 +582,116 @@ class TestPortfolio:
         await broker.close()
 
         assert route.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Market Data
+# ---------------------------------------------------------------------------
+
+
+class TestMarketData:
+    """Tests for get_quotes and get_historical."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_quotes_single_symbol(self):
+        respx.get(f"{BASE_URL}/openapi/v1/spot/orderbook").mock(
+            return_value=httpx.Response(200, json={
+                "code": 200,
+                "data": {
+                    "asks": [["66500.00", "1.5"], ["66600.00", "2.0"]],
+                    "bids": [["66400.00", "1.0"], ["66300.00", "0.5"]],
+                },
+            })
+        )
+
+        broker = _make_authenticated_broker()
+        quotes = await broker.get_quotes(["BTCUSDT"])
+        await broker.close()
+
+        assert len(quotes) == 1
+        q = quotes[0]
+        assert q.symbol == "BTCUSDT"
+        assert q.exchange == "EXCHANGE1"
+        assert q.bid == Decimal("66400.00")
+        assert q.ask == Decimal("66500.00")
+        assert q.last_price == (Decimal("66400.00") + Decimal("66500.00")) / 2
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_quotes_empty_orderbook_skipped(self):
+        respx.get(f"{BASE_URL}/openapi/v1/spot/orderbook").mock(
+            return_value=httpx.Response(200, json={
+                "code": 200,
+                "data": {"asks": [], "bids": []},
+            })
+        )
+
+        broker = _make_authenticated_broker()
+        quotes = await broker.get_quotes(["ILLIQUIDUSDT"])
+        await broker.close()
+
+        assert len(quotes) == 0
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_historical_basic(self):
+        candles = [
+            [1700000000000, "30000.0", "30500.0", "29500.0", "30200.0", "100.5",
+             1700000059999, "0", 0, "0", "0", "0"],
+            [1700000060000, "30200.0", "30600.0", "30100.0", "30400.0", "200.3",
+             1700000119999, "0", 0, "0", "0", "0"],
+        ]
+        respx.get(f"{BINANCE_URL}/api/v3/klines").mock(
+            return_value=httpx.Response(200, json=candles)
+        )
+
+        broker = _make_authenticated_broker()
+        start = datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+        end = datetime(2023, 11, 14, 22, 15, 20, tzinfo=UTC)
+        result = await broker.get_historical("BTCUSDT", "1m", start, end)
+        await broker.close()
+
+        assert len(result) == 2
+        c0 = result[0]
+        assert c0.open == Decimal("30000.0")
+        assert c0.close == Decimal("30200.0")
+        assert c0.volume == Decimal("100.5")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_historical_paginates(self):
+        batch_1 = []
+        for i in range(1000):
+            open_time = 1700000000000 + i * 60000
+            close_time = open_time + 59999
+            batch_1.append([
+                open_time, "30000.0", "30500.0", "29500.0", "30200.0", "100.0",
+                close_time, "0", 0, "0", "0", "0",
+            ])
+
+        batch_2 = []
+        last_close = batch_1[-1][6]
+        for i in range(200):
+            open_time = last_close + 1 + i * 60000
+            close_time = open_time + 59999
+            batch_2.append([
+                open_time, "31000.0", "31500.0", "30500.0", "31200.0", "50.0",
+                close_time, "0", 0, "0", "0", "0",
+            ])
+
+        route = respx.get(f"{BINANCE_URL}/api/v3/klines").mock(
+            side_effect=[
+                Response(200, json=batch_1),
+                Response(200, json=batch_2),
+            ]
+        )
+
+        broker = _make_authenticated_broker()
+        start = datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+        end = datetime(2023, 12, 1, 0, 0, 0, tzinfo=UTC)
+        result = await broker.get_historical("BTCUSDT", "1m", start, end)
+        await broker.close()
+
+        assert len(result) == 1200
+        assert route.call_count == 2

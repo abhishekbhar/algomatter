@@ -291,10 +291,81 @@ class Exchange1Broker(BrokerAdapter):
         return holdings
 
     async def get_quotes(self, symbols: list[str]) -> list[Quote]:
-        raise NotImplementedError
+        """Fetch orderbook for each symbol and return best bid/ask with mid price."""
+        assert self._client is not None
+        quotes: list[Quote] = []
+        for symbol in symbols:
+            resp = await self._client.get(
+                f"{BASE_URL}/openapi/v1/spot/orderbook",
+                params={"symbol": symbol.lower()},
+            )
+            if resp.status_code >= 400:
+                continue
+            data = resp.json()
+            book = data.get("data", data)
+            asks = book.get("asks", [])
+            bids = book.get("bids", [])
+            if not asks or not bids:
+                continue
+            best_ask = Decimal(str(asks[0][0]))
+            best_bid = Decimal(str(bids[0][0]))
+            mid_price = (best_ask + best_bid) / 2
+            quotes.append(
+                Quote(
+                    symbol=symbol,
+                    exchange="EXCHANGE1",
+                    last_price=mid_price,
+                    bid=best_bid,
+                    ask=best_ask,
+                )
+            )
+        return quotes
 
-    async def get_historical(self, symbol: str, interval: str, start: datetime, end: datetime) -> list[OHLCV]:
-        raise NotImplementedError
+    async def get_historical(
+        self, symbol: str, interval: str, start: datetime, end: datetime,
+    ) -> list[OHLCV]:
+        """Fetch historical klines from Binance public API (Exchange1 fallback).
+
+        Exchange1 only provides klines via WebSocket, so we use Binance's
+        public REST API which requires no authentication.
+        """
+        if self._binance_client is None:
+            self._binance_client = httpx.AsyncClient(timeout=10.0)
+
+        all_candles: list[OHLCV] = []
+        start_ms = int(start.timestamp() * 1000)
+        end_ms = int(end.timestamp() * 1000)
+
+        while start_ms < end_ms:
+            resp = await self._binance_client.get(
+                f"{BINANCE_URL}/api/v3/klines",
+                params={
+                    "symbol": symbol,
+                    "interval": interval,
+                    "startTime": start_ms,
+                    "endTime": end_ms,
+                    "limit": 1000,
+                },
+            )
+            data = resp.json()
+            if not data:
+                break
+
+            for candle in data:
+                all_candles.append(OHLCV(
+                    timestamp=datetime.fromtimestamp(candle[0] / 1000, tz=UTC),
+                    open=Decimal(str(candle[1])),
+                    high=Decimal(str(candle[2])),
+                    low=Decimal(str(candle[3])),
+                    close=Decimal(str(candle[4])),
+                    volume=Decimal(str(candle[5])),
+                ))
+
+            if len(data) < 1000:
+                break
+            start_ms = data[-1][6] + 1  # closeTime + 1ms
+
+        return all_candles
 
     async def close(self) -> None:
         if self._client is not None:
