@@ -309,17 +309,81 @@ class BinanceTestnetBroker(BrokerAdapter):
         )
 
     # ------------------------------------------------------------------
-    # Portfolio (placeholder)
+    # Portfolio
     # ------------------------------------------------------------------
 
+    async def _get_account_info(self) -> dict:
+        """Fetch account info with a 2-second TTL cache."""
+        now = time.time()
+        if self._account_cache and (now - self._account_cache[0]) < 2.0:
+            return self._account_cache[1]
+        resp = await self._get("/api/v3/account", signed=True)
+        data = resp.json()
+        self._account_cache = (now, data)
+        return data
+
     async def get_positions(self) -> list[Position]:
-        raise NotImplementedError("get_positions not yet implemented for BinanceTestnetBroker")
+        """Return non-quote, non-zero asset balances as positions."""
+        data = await self._get_account_info()
+        positions: list[Position] = []
+        for bal in data.get("balances", []):
+            asset = bal["asset"]
+            if asset in QUOTE_ASSETS:
+                continue
+            free = Decimal(bal["free"])
+            locked = Decimal(bal["locked"])
+            total = free + locked
+            if total == 0:
+                continue
+            positions.append(
+                Position(
+                    symbol=asset,
+                    exchange="BINANCE_TESTNET",
+                    action="BUY",
+                    quantity=total,
+                    entry_price=Decimal("0"),
+                    product_type="DELIVERY",
+                )
+            )
+        return positions
 
     async def get_holdings(self) -> list[Holding]:
-        raise NotImplementedError("get_holdings not yet implemented for BinanceTestnetBroker")
+        """Return non-quote, non-zero asset balances as holdings."""
+        data = await self._get_account_info()
+        holdings: list[Holding] = []
+        for bal in data.get("balances", []):
+            asset = bal["asset"]
+            if asset in QUOTE_ASSETS:
+                continue
+            free = Decimal(bal["free"])
+            locked = Decimal(bal["locked"])
+            total = free + locked
+            if total == 0:
+                continue
+            holdings.append(
+                Holding(
+                    symbol=asset,
+                    exchange="BINANCE_TESTNET",
+                    quantity=total,
+                    average_price=Decimal("0"),
+                )
+            )
+        return holdings
 
     async def get_balance(self) -> AccountBalance:
-        raise NotImplementedError("get_balance not yet implemented for BinanceTestnetBroker")
+        """Return balance summing only USDT and USDC assets."""
+        data = await self._get_account_info()
+        available = Decimal("0")
+        used_margin = Decimal("0")
+        for bal in data.get("balances", []):
+            if bal["asset"] in QUOTE_ASSETS:
+                available += Decimal(bal["free"])
+                used_margin += Decimal(bal["locked"])
+        return AccountBalance(
+            available=available,
+            used_margin=used_margin,
+            total=available + used_margin,
+        )
 
     # ------------------------------------------------------------------
     # Market Data (placeholder)

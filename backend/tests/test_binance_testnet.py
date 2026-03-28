@@ -449,3 +449,106 @@ class TestOrders:
         assert status.fill_price == Decimal("300.00") / Decimal("0.01")
         assert status.fill_quantity == Decimal("0.01")
         assert status.pending_quantity is None
+
+
+# ---------------------------------------------------------------------------
+# Portfolio / Balance
+# ---------------------------------------------------------------------------
+
+ACCOUNT_RESPONSE = {
+    "balances": [
+        {"asset": "BTC", "free": "0.5", "locked": "0.1"},
+        {"asset": "ETH", "free": "10.0", "locked": "0.0"},
+        {"asset": "USDT", "free": "5000.0", "locked": "1000.0"},
+        {"asset": "USDC", "free": "2000.0", "locked": "0.0"},
+        {"asset": "BNB", "free": "0.0", "locked": "0.0"},
+    ]
+}
+
+
+class TestPortfolio:
+    """Tests for get_balance, get_positions, get_holdings, and account caching."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_balance(self):
+        respx.get(f"{BASE_URL}/api/v3/account").mock(
+            return_value=httpx.Response(200, json=ACCOUNT_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        balance = await broker.get_balance()
+        await broker._client.aclose()
+
+        assert balance.available == Decimal("7000.0")
+        assert balance.used_margin == Decimal("1000.0")
+        assert balance.total == Decimal("8000.0")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_positions_excludes_quote_assets(self):
+        respx.get(f"{BASE_URL}/api/v3/account").mock(
+            return_value=httpx.Response(200, json=ACCOUNT_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        positions = await broker.get_positions()
+        await broker._client.aclose()
+
+        symbols = {p.symbol for p in positions}
+        assert "BTC" in symbols
+        assert "ETH" in symbols
+        assert "USDT" not in symbols
+        assert "USDC" not in symbols
+        assert "BNB" not in symbols  # zero balance excluded
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_positions_fields(self):
+        respx.get(f"{BASE_URL}/api/v3/account").mock(
+            return_value=httpx.Response(200, json=ACCOUNT_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        positions = await broker.get_positions()
+        await broker._client.aclose()
+
+        btc = next(p for p in positions if p.symbol == "BTC")
+        assert btc.quantity == Decimal("0.6")
+        assert btc.exchange == "BINANCE_TESTNET"
+        assert btc.action == "BUY"
+        assert btc.entry_price == Decimal("0")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_holdings(self):
+        respx.get(f"{BASE_URL}/api/v3/account").mock(
+            return_value=httpx.Response(200, json=ACCOUNT_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        holdings = await broker.get_holdings()
+        await broker._client.aclose()
+
+        symbols = {h.symbol for h in holdings}
+        assert symbols == {"BTC", "ETH"}
+
+        btc = next(h for h in holdings if h.symbol == "BTC")
+        assert btc.quantity == Decimal("0.6")
+        assert btc.exchange == "BINANCE_TESTNET"
+        assert btc.average_price == Decimal("0")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_account_cache_prevents_duplicate_calls(self):
+        route = respx.get(f"{BASE_URL}/api/v3/account").mock(
+            return_value=httpx.Response(200, json=ACCOUNT_RESPONSE)
+        )
+
+        broker = _make_authenticated_broker()
+        await broker.get_balance()
+        await broker.get_positions()
+        await broker.get_holdings()
+        await broker._client.aclose()
+
+        assert route.call_count == 1
