@@ -219,10 +219,10 @@ Current behavior: stops all active deployments.
 
 **Enhancement:** Also cancel all open orders for each stopped deployment. For live deployments, call `broker.cancel_order()` for each open order. Update corresponding `DeploymentTrade` records to "cancelled".
 
-Return enhanced response (note: this changes the response shape from the current `{"stopped": N}` — add `orders_cancelled` as an additional field to maintain backward compatibility):
+Return enhanced response. The current endpoint returns `list[DeploymentResponse]`. Keep this shape and wrap it with additional metadata:
 ```json
 {
-  "stopped": 3,
+  "deployments": [DeploymentResponse, ...],
   "orders_cancelled": 7
 }
 ```
@@ -261,6 +261,8 @@ class DeploymentTradeResponse(BaseModel):
     realized_pnl: float | None
     created_at: str
     filled_at: str | None
+    strategy_name: str  # Joined from StrategyDeployment → StrategyCode.name
+    symbol: str  # From StrategyDeployment.symbol
 
 class TradesResponse(BaseModel):
     trades: list[DeploymentTradeResponse]
@@ -283,8 +285,8 @@ class MetricsResponse(BaseModel):
     max_drawdown: float
     total_trades: int
     avg_trade_pnl: float
-    best_trade: float
-    worst_trade: float
+    best_trade: float | None  # None when zero trades
+    worst_trade: float | None  # None when zero trades
 
 class ComparisonResponse(BaseModel):
     backtest: dict
@@ -466,6 +468,8 @@ Realized PnL is computed when a position-closing trade fills:
 
 ### New Types (add to `frontend/lib/api/types.ts`)
 
+Also update the existing `Deployment` interface to add `strategy_name: string`.
+
 ```typescript
 export interface DeploymentTrade {
   id: string;
@@ -484,6 +488,8 @@ export interface DeploymentTrade {
   realized_pnl: number | null;
   created_at: string;
   filled_at: string | null;
+  strategy_name: string;
+  symbol: string;
 }
 
 export interface TradesResponse {
@@ -509,8 +515,8 @@ export interface LiveMetrics {
   max_drawdown: number;
   total_trades: number;
   avg_trade_pnl: number;
-  best_trade: number;
-  worst_trade: number;
+  best_trade: number | null;
+  worst_trade: number | null;
 }
 
 export interface ComparisonData {
