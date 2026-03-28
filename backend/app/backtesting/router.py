@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user, get_tenant_session
 from app.backtesting.engine import run_backtest
-from app.db.models import StrategyResult
+from app.db.models import Strategy, StrategyCode, StrategyDeployment, StrategyResult
 
 router = APIRouter(prefix="/api/v1/backtests", tags=["backtests"])
 
@@ -45,6 +45,7 @@ class CreateBacktestRequest(BaseModel):
 class BacktestResponse(BaseModel):
     id: str
     strategy_id: str | None
+    strategy_name: str | None = None
     status: str
     trade_log: list | None = None
     equity_curve: list | None = None
@@ -82,10 +83,11 @@ def _parse_signals_csv(csv_text: str) -> list[dict]:
     return signals
 
 
-def _model_to_response(row: StrategyResult) -> BacktestResponse:
+def _model_to_response(row: StrategyResult, strategy_name: str | None = None) -> BacktestResponse:
     return BacktestResponse(
         id=str(row.id),
         strategy_id=str(row.strategy_id) if row.strategy_id else None,
+        strategy_name=strategy_name,
         status=row.status,
         trade_log=row.trade_log,
         equity_curve=row.equity_curve,
@@ -171,7 +173,23 @@ async def list_backtests(
         )
     )
     rows = result.scalars().all()
-    return [_model_to_response(r) for r in rows]
+
+    # Resolve strategy names from webhook strategies and hosted strategies
+    responses = []
+    for r in rows:
+        name: str | None = None
+        if r.strategy_id:
+            strat = await session.get(Strategy, r.strategy_id)
+            if strat:
+                name = strat.name
+        elif r.deployment_id:
+            dep = await session.get(StrategyDeployment, r.deployment_id)
+            if dep:
+                code = await session.get(StrategyCode, dep.strategy_code_id)
+                if code:
+                    name = code.name
+        responses.append(_model_to_response(r, strategy_name=name))
+    return responses
 
 
 @router.get("/{backtest_id}", response_model=BacktestResponse)

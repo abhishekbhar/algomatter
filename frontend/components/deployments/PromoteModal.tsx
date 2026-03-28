@@ -2,9 +2,10 @@
 import { useState } from "react";
 import {
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
-  Button, FormControl, FormLabel, Input, Text, useToast, VStack,
+  Button, FormControl, FormLabel, Input, Select, Text, useToast, VStack,
 } from "@chakra-ui/react";
 import { apiClient } from "@/lib/api/client";
+import { useBrokers } from "@/lib/hooks/useApi";
 import type { Deployment } from "@/lib/api/types";
 
 interface PromoteModalProps {
@@ -19,6 +20,7 @@ export function PromoteModal({ isOpen, onClose, deployment, onPromoted }: Promot
   const [brokerId, setBrokerId] = useState("");
   const [cronExpression, setCronExpression] = useState("*/5 * * * *");
   const [promoting, setPromoting] = useState(false);
+  const { data: brokers } = useBrokers();
 
   if (!deployment) return null;
 
@@ -63,8 +65,18 @@ export function PromoteModal({ isOpen, onClose, deployment, onPromoted }: Promot
             </Text>
             {needsBroker && (
               <FormControl isRequired>
-                <FormLabel>Broker Connection ID</FormLabel>
-                <Input value={brokerId} onChange={(e) => setBrokerId(e.target.value)} placeholder="UUID" />
+                <FormLabel>Broker Connection</FormLabel>
+                <Select
+                  placeholder="Select broker"
+                  value={brokerId}
+                  onChange={(e) => setBrokerId(e.target.value)}
+                >
+                  {(brokers ?? []).map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.broker_type} ({b.id.slice(0, 8)}...)
+                    </option>
+                  ))}
+                </Select>
               </FormControl>
             )}
             <FormControl>

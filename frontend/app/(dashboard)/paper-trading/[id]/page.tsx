@@ -30,13 +30,16 @@ export default function PaperTradingDetailPage() {
   const equityData = useMemo(() => {
     if (!trades.length) return [];
     let equity = Number(session?.initial_capital ?? 100000);
-    return trades
+    const byTime = new Map<string, { time: string; value: number }>();
+    trades
       .filter((t) => t.executed_at != null)
       .sort((a, b) => (a.executed_at ?? "").localeCompare(b.executed_at ?? ""))
-      .map((t) => {
+      .forEach((t) => {
         equity += Number(t.realized_pnl ?? 0) - Number(t.commission ?? 0);
-        return { time: (t.executed_at ?? "").split("T")[0], value: equity };
+        const time = (t.executed_at ?? "").split("T")[0];
+        byTime.set(time, { time, value: equity });
       });
+    return Array.from(byTime.values());
   }, [trades, session?.initial_capital]);
 
   const handleStop = async () => {

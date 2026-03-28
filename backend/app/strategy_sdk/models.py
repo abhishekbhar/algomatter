@@ -35,3 +35,12 @@ class PendingOrder:
     price: float | None = None
     trigger_price: float | None = None
     age_candles: int = 0
+
+
+@dataclass
+class Signal:
+    action: str
+    symbol: str
+    quantity: float
+    price: float | None = None
+    order_type: str = "market"

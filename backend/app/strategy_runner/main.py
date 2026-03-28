@@ -8,7 +8,7 @@ from redis.asyncio import Redis
 
 from app.config import settings
 from app.strategy_runner.backtest_runner import run_backtest_job
-from app.strategy_runner.scheduler import load_active_deployments, register_deployment, unregister_deployment
+from app.strategy_runner.scheduler import load_active_deployments, register_deployment, unregister_deployment, stop_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("strategy_runner")
@@ -93,6 +93,7 @@ async def main():
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    await stop_scheduler()
     await redis.aclose()
     logger.info("Strategy runner stopped.")
 

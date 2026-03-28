@@ -57,15 +57,26 @@ export default function StrategyDrilldownPage() {
 
   const strategyName = strategy?.name ?? "Strategy";
 
-  const chartData = (equityData ?? []).map((d: EquityCurvePoint) => ({
-    time: d.timestamp.split("T")[0],
-    value: d.equity,
-  }));
+  const chartData = (() => {
+    const byTime = new Map<string, { time: string; value: number }>();
+    for (const d of equityData ?? []) {
+      const time = (d.timestamp ?? "").split("T")[0].split(" ")[0];
+      byTime.set(time, { time, value: d.equity });
+    }
+    return Array.from(byTime.values());
+  })();
 
-  const drawdownData = (equityData ?? []).map((d: EquityCurvePoint) => ({
-    time: d.timestamp.split("T")[0],
-    value: 0, // TODO: compute drawdown from equity curve
-  }));
+  const drawdownData = (() => {
+    const byTime = new Map<string, { time: string; value: number }>();
+    let peak = 0;
+    for (const d of equityData ?? []) {
+      const time = (d.timestamp ?? "").split("T")[0].split(" ")[0];
+      if (d.equity > peak) peak = d.equity;
+      const dd = peak > 0 ? ((d.equity - peak) / peak) * 100 : 0;
+      byTime.set(time, { time, value: dd });
+    }
+    return Array.from(byTime.values());
+  })();
 
   const handleExportCsv = async () => {
     try {

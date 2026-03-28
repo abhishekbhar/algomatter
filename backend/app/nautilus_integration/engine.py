@@ -125,6 +125,10 @@ async def run_backtest(
 
 def _load_user_strategy(code: str, entrypoint: str, params: dict | None):
     """Execute user code in a restricted namespace and return the strategy instance."""
+    import sys
+    import app.strategy_sdk as _sdk
+    sys.modules.setdefault("strategy_sdk", _sdk)
+
     namespace: dict[str, Any] = {}
     exec(code, namespace)  # noqa: S102 — security boundary is the subprocess sandbox
 

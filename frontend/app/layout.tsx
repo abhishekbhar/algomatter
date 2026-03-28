@@ -4,7 +4,7 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata = {
-  title: "GainGuard",
+  title: "AlgoMatter",
   description: "Multiuser algo-testing platform",
 };
 
