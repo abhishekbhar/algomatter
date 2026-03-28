@@ -349,3 +349,133 @@ class TestOrders:
 
         assert resp.status == "rejected"
         assert "500" in resp.message
+
+
+# ---------------------------------------------------------------------------
+# Cancel & Status
+# ---------------------------------------------------------------------------
+
+
+class TestCancelAndStatus:
+    """Tests for cancel_order and get_order_status."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_cancel_order_success(self):
+        route = respx.post(f"{BASE_URL}/openapi/v1/spot/order/cancel").mock(
+            return_value=httpx.Response(200, json={"code": 200, "msg": "success"})
+        )
+
+        broker = _make_authenticated_broker()
+        result = await broker.cancel_order("855188")
+        await broker.close()
+
+        assert result is True
+        import json
+        body = json.loads(route.calls[0].request.content)
+        assert body["id"] == "855188"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_cancel_order_failure(self):
+        respx.post(f"{BASE_URL}/openapi/v1/spot/order/cancel").mock(
+            return_value=httpx.Response(200, json={"code": 400, "msg": "Order already filled"})
+        )
+
+        broker = _make_authenticated_broker()
+        with pytest.raises(RuntimeError, match="Order already filled"):
+            await broker.cancel_order("855188")
+        await broker.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_order_status_filled(self):
+        respx.get(f"{BASE_URL}/openapi/v1/spot/order/detail").mock(
+            return_value=httpx.Response(200, json={
+                "code": 200,
+                "data": {
+                    "id": "855188",
+                    "state": "filled",
+                    "tradePrice": "66500.00",
+                    "doneQuantity": "0.001",
+                    "quantity": "0.001",
+                },
+            })
+        )
+
+        broker = _make_authenticated_broker()
+        status = await broker.get_order_status("855188")
+        await broker.close()
+
+        assert status.order_id == "855188"
+        assert status.status == "filled"
+        assert status.fill_price == Decimal("66500.00")
+        assert status.fill_quantity == Decimal("0.001")
+        assert status.pending_quantity == Decimal("0")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_order_status_partially_filled(self):
+        respx.get(f"{BASE_URL}/openapi/v1/spot/order/detail").mock(
+            return_value=httpx.Response(200, json={
+                "code": 200,
+                "data": {
+                    "id": "855188",
+                    "state": "partially_filled",
+                    "estimatedPrice": "66000.00",
+                    "doneQuantity": "0.0005",
+                    "quantity": "0.001",
+                },
+            })
+        )
+
+        broker = _make_authenticated_broker()
+        status = await broker.get_order_status("855188")
+        await broker.close()
+
+        assert status.status == "open"
+        assert status.fill_price == Decimal("66000.00")
+        assert status.fill_quantity == Decimal("0.0005")
+        assert status.pending_quantity == Decimal("0.0005")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_order_status_cancelled(self):
+        respx.get(f"{BASE_URL}/openapi/v1/spot/order/detail").mock(
+            return_value=httpx.Response(200, json={
+                "code": 200,
+                "data": {
+                    "id": "855188",
+                    "state": "canceled",
+                    "quantity": "0.001",
+                },
+            })
+        )
+
+        broker = _make_authenticated_broker()
+        status = await broker.get_order_status("855188")
+        await broker.close()
+
+        assert status.status == "cancelled"
+        assert status.fill_price == Decimal("0")
+        assert status.fill_quantity == Decimal("0")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_order_status_unknown_state_defaults_to_open(self):
+        respx.get(f"{BASE_URL}/openapi/v1/spot/order/detail").mock(
+            return_value=httpx.Response(200, json={
+                "code": 200,
+                "data": {
+                    "id": "855188",
+                    "state": "some_new_state",
+                    "quantity": "0.001",
+                },
+            })
+        )
+
+        broker = _make_authenticated_broker()
+        status = await broker.get_order_status("855188")
+        await broker.close()
+
+        assert status.status == "open"

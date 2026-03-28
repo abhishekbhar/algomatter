@@ -192,10 +192,37 @@ class Exchange1Broker(BrokerAdapter):
         )
 
     async def cancel_order(self, order_id: str) -> bool:
-        raise NotImplementedError
+        """Cancel an open order on Exchange1."""
+        await self._post("/openapi/v1/spot/order/cancel", body={"id": order_id}, signed=True)
+        return True
 
     async def get_order_status(self, order_id: str) -> OrderStatus:
-        raise NotImplementedError
+        """Query the current status of an order on Exchange1."""
+        data = await self._get(
+            "/openapi/v1/spot/order/detail", params={"id": order_id}, signed=True,
+        )
+        detail = data.get("data", {})
+
+        state = detail.get("state", "")
+        status = _STATUS_MAP.get(state, "open")
+
+        fill_price_raw = detail.get("tradePrice") or detail.get("estimatedPrice")
+        fill_price = Decimal(str(fill_price_raw)) if fill_price_raw else Decimal("0")
+
+        done_qty_raw = detail.get("doneQuantity")
+        fill_quantity = Decimal(str(done_qty_raw)) if done_qty_raw else Decimal("0")
+
+        total_qty_raw = detail.get("quantity", "0")
+        total_quantity = Decimal(str(total_qty_raw))
+        pending_quantity = total_quantity - fill_quantity if total_quantity > fill_quantity else Decimal("0")
+
+        return OrderStatus(
+            order_id=str(detail.get("id", order_id)),
+            status=status,
+            fill_price=fill_price,
+            fill_quantity=fill_quantity,
+            pending_quantity=pending_quantity,
+        )
 
     async def get_positions(self) -> list[Position]:
         raise NotImplementedError
