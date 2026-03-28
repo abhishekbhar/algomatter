@@ -136,10 +136,10 @@ class StrategyResult(Base):
         ForeignKey("strategies.id"), nullable=True
     )
     deployment_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("strategy_deployments.id"), nullable=True
+        ForeignKey("strategy_deployments.id", ondelete="CASCADE"), nullable=True
     )
     strategy_code_version_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("strategy_code_versions.id"), nullable=True
+        ForeignKey("strategy_code_versions.id", ondelete="CASCADE"), nullable=True
     )
     result_type: Mapped[str] = mapped_column(String(50), nullable=False)
     trade_log: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -255,10 +255,10 @@ class StrategyCode(Base):
     )
 
     versions: Mapped[list["StrategyCodeVersion"]] = relationship(
-        back_populates="strategy_code"
+        back_populates="strategy_code", passive_deletes=True
     )
     deployments: Mapped[list["StrategyDeployment"]] = relationship(
-        back_populates="strategy_code"
+        back_populates="strategy_code", passive_deletes=True
     )
 
 
@@ -294,10 +294,10 @@ class StrategyDeployment(Base):
         ForeignKey("users.id"), nullable=False, index=True
     )
     strategy_code_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("strategy_codes.id"), nullable=False, index=True
+        ForeignKey("strategy_codes.id", ondelete="CASCADE"), nullable=False, index=True
     )
     strategy_code_version_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("strategy_code_versions.id"), nullable=False
+        ForeignKey("strategy_code_versions.id", ondelete="CASCADE"), nullable=False
     )
     mode: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="pending")
@@ -312,7 +312,7 @@ class StrategyDeployment(Base):
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     params: Mapped[dict] = mapped_column(JSON, default=dict)
     promoted_from_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("strategy_deployments.id"), nullable=True
+        ForeignKey("strategy_deployments.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -329,7 +329,7 @@ class StrategyDeployment(Base):
     )
     code_version: Mapped["StrategyCodeVersion"] = relationship()
     state: Mapped["DeploymentState | None"] = relationship(
-        back_populates="deployment", uselist=False
+        back_populates="deployment", uselist=False, passive_deletes=True
     )
 
 
@@ -337,7 +337,7 @@ class DeploymentState(Base):
     __tablename__ = "deployment_states"
 
     deployment_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("strategy_deployments.id"), primary_key=True
+        ForeignKey("strategy_deployments.id", ondelete="CASCADE"), primary_key=True
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
@@ -363,7 +363,7 @@ class DeploymentLog(Base):
         ForeignKey("users.id"), nullable=False, index=True
     )
     deployment_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("strategy_deployments.id"), nullable=False, index=True
+        ForeignKey("strategy_deployments.id", ondelete="CASCADE"), nullable=False, index=True
     )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
