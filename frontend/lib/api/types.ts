@@ -137,3 +137,75 @@ export interface AnalyticsTrade {
 export interface HealthStatus {
   status: string;
 }
+
+// Hosted Strategies
+export interface HostedStrategy {
+  id: string;
+  name: string;
+  description: string | null;
+  code: string;
+  version: number;
+  entrypoint: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategyVersion {
+  id: string;
+  version: number;
+  code: string;
+  created_at: string;
+}
+
+export interface StrategyTemplate {
+  name: string;
+  description: string;
+  code: string;
+  params: Record<string, unknown>;
+}
+
+// Deployments
+export interface Deployment {
+  id: string;
+  strategy_code_id: string;
+  strategy_code_version_id: string;
+  mode: "backtest" | "paper" | "live";
+  status: "pending" | "running" | "paused" | "stopped" | "completed" | "failed";
+  symbol: string;
+  exchange: string;
+  product_type: string;
+  interval: string;
+  broker_connection_id: string | null;
+  cron_expression: string | null;
+  config: Record<string, unknown>;
+  params: Record<string, unknown>;
+  promoted_from_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  stopped_at: string | null;
+}
+
+export interface DeploymentResult {
+  id: string;
+  deployment_id: string;
+  trade_log: unknown[] | null;
+  equity_curve: { timestamp: string; equity: number }[] | null;
+  metrics: StrategyMetrics | null;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface DeploymentLogEntry {
+  id: string;
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+export interface DeploymentLogsResponse {
+  logs: DeploymentLogEntry[];
+  total: number;
+  offset: number;
+  limit: number;
+}

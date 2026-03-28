@@ -16,6 +16,12 @@ import type {
   StrategyMetrics,
   EquityCurvePoint,
   AnalyticsTrade,
+  HostedStrategy,
+  StrategyVersion,
+  StrategyTemplate,
+  Deployment,
+  DeploymentResult,
+  DeploymentLogsResponse,
 } from "@/lib/api/types";
 
 function fetcher<T>(path: string): Promise<T> {
@@ -100,5 +106,51 @@ export function useStrategyEquityCurve(strategyId: string | null) {
 export function useStrategyTrades(strategyId: string | null) {
   return useApiGet<AnalyticsTrade[]>(
     strategyId ? `/api/v1/analytics/strategies/${strategyId}/trades` : null,
+  );
+}
+
+// Hosted Strategies
+export function useHostedStrategies() {
+  return useApiGet<HostedStrategy[]>("/api/v1/hosted-strategies");
+}
+
+export function useHostedStrategy(id: string | undefined) {
+  return useApiGet<HostedStrategy>(id ? `/api/v1/hosted-strategies/${id}` : null);
+}
+
+export function useStrategyVersions(id: string | undefined) {
+  return useApiGet<StrategyVersion[]>(id ? `/api/v1/hosted-strategies/${id}/versions` : null);
+}
+
+export function useStrategyTemplates() {
+  return useApiGet<StrategyTemplate[]>("/api/v1/strategy-templates");
+}
+
+// Deployments
+export function useDeployments(strategyId: string | undefined) {
+  return useApiGet<Deployment[]>(
+    strategyId ? `/api/v1/hosted-strategies/${strategyId}/deployments` : null,
+    { refreshInterval: POLLING_INTERVALS.PAPER_TRADING }
+  );
+}
+
+export function useDeployment(id: string | undefined) {
+  return useApiGet<Deployment>(id ? `/api/v1/deployments/${id}` : null, { refreshInterval: 2000 });
+}
+
+export function useDeploymentResults(id: string | undefined) {
+  return useApiGet<DeploymentResult | null>(id ? `/api/v1/deployments/${id}/results` : null);
+}
+
+export function useActiveDeployments() {
+  return useApiGet<Deployment[]>(
+    "/api/v1/deployments?status=running",
+    { refreshInterval: POLLING_INTERVALS.PAPER_TRADING }
+  );
+}
+
+export function useDeploymentLogs(id: string | undefined, offset = 0, limit = 50) {
+  return useApiGet<DeploymentLogsResponse>(
+    id ? `/api/v1/deployments/${id}/logs?offset=${offset}&limit=${limit}` : null
   );
 }
