@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from urllib.parse import urlencode
@@ -390,7 +390,19 @@ class BinanceTestnetBroker(BrokerAdapter):
     # ------------------------------------------------------------------
 
     async def get_quotes(self, symbols: list[str]) -> list[Quote]:
-        raise NotImplementedError("get_quotes not yet implemented for BinanceTestnetBroker")
+        quotes = []
+        for symbol in symbols:
+            resp = await self._get("/api/v3/ticker/24hr", {"symbol": symbol})
+            data = resp.json()
+            quotes.append(Quote(
+                symbol=data["symbol"],
+                exchange="BINANCE_TESTNET",
+                last_price=Decimal(data["lastPrice"]),
+                bid=Decimal(data["bidPrice"]),
+                ask=Decimal(data["askPrice"]),
+                volume=Decimal(data["volume"]),
+            ))
+        return quotes
 
     async def get_historical(
         self,
@@ -399,4 +411,34 @@ class BinanceTestnetBroker(BrokerAdapter):
         start: datetime,
         end: datetime,
     ) -> list[OHLCV]:
-        raise NotImplementedError("get_historical not yet implemented for BinanceTestnetBroker")
+        all_candles: list[OHLCV] = []
+        start_ms = int(start.timestamp() * 1000)
+        end_ms = int(end.timestamp() * 1000)
+
+        while start_ms < end_ms:
+            resp = await self._get("/api/v3/klines", {
+                "symbol": symbol,
+                "interval": interval,
+                "startTime": start_ms,
+                "endTime": end_ms,
+                "limit": 1000,
+            })
+            data = resp.json()
+            if not data:
+                break
+
+            for candle in data:
+                all_candles.append(OHLCV(
+                    timestamp=datetime.fromtimestamp(candle[0] / 1000, tz=UTC),
+                    open=Decimal(str(candle[1])),
+                    high=Decimal(str(candle[2])),
+                    low=Decimal(str(candle[3])),
+                    close=Decimal(str(candle[4])),
+                    volume=Decimal(str(candle[5])),
+                ))
+
+            if len(data) < 1000:
+                break
+            start_ms = data[-1][6] + 1  # closeTime + 1ms
+
+        return all_candles
