@@ -4,7 +4,7 @@ import {
   Box, Heading, Flex, Button, Tabs, TabList, TabPanels, Tab, TabPanel,
   Select, Text, useToast, useColorModeValue, Badge, VStack,
   Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton,
-  useDisclosure, FormControl, FormLabel, Input,
+  useDisclosure, FormControl, FormLabel, Input, NumberInput, NumberInputField,
 } from "@chakra-ui/react";
 import { useParams, useRouter } from "next/navigation";
 import MonacoEditor from "@/components/editor/MonacoEditor";
@@ -34,6 +34,9 @@ export default function StrategyEditorPage() {
   const [deploySymbol, setDeploySymbol] = useState("BTCUSDT");
   const [deployExchange, setDeployExchange] = useState("BINANCE");
   const [deployInterval, setDeployInterval] = useState("5m");
+  const [deployStartDate, setDeployStartDate] = useState("2025-01-01");
+  const [deployEndDate, setDeployEndDate] = useState("2025-06-01");
+  const [deployCapital, setDeployCapital] = useState(10000);
   const [deploying, setDeploying] = useState(false);
 
   useEffect(() => {
@@ -88,15 +91,23 @@ export default function StrategyEditorPage() {
   const handleDeploy = async () => {
     setDeploying(true);
     try {
+      const body: Record<string, unknown> = {
+        mode: deployMode,
+        symbol: deploySymbol,
+        exchange: deployExchange,
+        interval: deployInterval,
+        product_type: "DELIVERY",
+      };
+      if (deployMode === "backtest") {
+        body.config = {
+          start_date: deployStartDate,
+          end_date: deployEndDate,
+          initial_capital: deployCapital,
+        };
+      }
       await apiClient(`/api/v1/hosted-strategies/${strategyId}/deployments`, {
         method: "POST",
-        body: {
-          mode: deployMode,
-          symbol: deploySymbol,
-          exchange: deployExchange,
-          interval: deployInterval,
-          product_type: "DELIVERY",
-        },
+        body,
       });
       mutateDeployments();
       toast({ title: `${deployMode} deployment created`, status: "success", duration: 3000 });
@@ -261,6 +272,7 @@ export default function StrategyEditorPage() {
               <FormControl>
                 <FormLabel>Interval</FormLabel>
                 <Select value={deployInterval} onChange={(e) => setDeployInterval(e.target.value)}>
+                  <option value="1m">1 Minute</option>
                   <option value="5m">5 Minutes</option>
                   <option value="15m">15 Minutes</option>
                   <option value="1h">1 Hour</option>
@@ -268,6 +280,24 @@ export default function StrategyEditorPage() {
                   <option value="1d">1 Day</option>
                 </Select>
               </FormControl>
+              {deployMode === "backtest" && (
+                <>
+                  <FormControl isRequired>
+                    <FormLabel>Start Date</FormLabel>
+                    <Input type="date" value={deployStartDate} onChange={(e) => setDeployStartDate(e.target.value)} />
+                  </FormControl>
+                  <FormControl isRequired>
+                    <FormLabel>End Date</FormLabel>
+                    <Input type="date" value={deployEndDate} onChange={(e) => setDeployEndDate(e.target.value)} />
+                  </FormControl>
+                  <FormControl>
+                    <FormLabel>Initial Capital ($)</FormLabel>
+                    <NumberInput min={100} value={deployCapital} onChange={(_, val) => setDeployCapital(val || 10000)}>
+                      <NumberInputField />
+                    </NumberInput>
+                  </FormControl>
+                </>
+              )}
             </VStack>
           </ModalBody>
           <ModalFooter>

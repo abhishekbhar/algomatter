@@ -186,6 +186,7 @@ webhook_config_router = APIRouter(
 
 @webhook_config_router.get("/config")
 async def get_webhook_config(
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -194,11 +195,14 @@ async def get_webhook_config(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"webhook_token": user.webhook_token}
+    base_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{base_url}/api/v1/webhook/{user.webhook_token}"
+    return {"webhook_url": webhook_url, "token": user.webhook_token}
 
 
 @webhook_config_router.post("/config/regenerate-token")
 async def regenerate_webhook_token(
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -209,7 +213,9 @@ async def regenerate_webhook_token(
         raise HTTPException(status_code=404, detail="User not found")
     user.webhook_token = secrets.token_urlsafe(32)
     await session.commit()
-    return {"webhook_token": user.webhook_token}
+    base_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{base_url}/api/v1/webhook/{user.webhook_token}"
+    return {"webhook_url": webhook_url, "token": user.webhook_token}
 
 
 @webhook_config_router.get("/signals")
@@ -231,8 +237,8 @@ async def list_signals(
             "received_at": s.received_at.isoformat() if s.received_at else None,
             "raw_payload": s.raw_payload,
             "parsed_signal": s.parsed_signal,
-            "rule_result": s.rule_result,
-            "rule_detail": s.rule_detail,
+            "status": s.rule_result,
+            "error_message": s.rule_detail,
             "execution_result": s.execution_result,
             "execution_detail": s.execution_detail,
             "processing_ms": s.processing_ms,

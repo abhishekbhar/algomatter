@@ -68,14 +68,21 @@ async def download_candles(
         for c in candles
     ]
 
+    # Batch inserts to stay under PostgreSQL's 32767 parameter limit.
+    # Each row has 9 columns, so ~3000 rows per batch is safe.
+    BATCH_SIZE = 3000
+    inserted = 0
+
     async with async_session_factory() as session:
-        stmt = pg_insert(HistoricalOHLCV).values(rows)
-        stmt = stmt.on_conflict_do_nothing(
-            index_elements=["symbol", "exchange", "interval", "timestamp"]
-        )
-        result = await session.execute(stmt)
+        for i in range(0, len(rows), BATCH_SIZE):
+            batch = rows[i : i + BATCH_SIZE]
+            stmt = pg_insert(HistoricalOHLCV).values(batch)
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=["symbol", "exchange", "interval", "timestamp"]
+            )
+            result = await session.execute(stmt)
+            inserted += result.rowcount
         await session.commit()
-        inserted = result.rowcount
         logger.info(f"Stored {inserted} new candles ({len(rows)} fetched, {len(rows) - inserted} already cached)")
         return inserted
 
@@ -179,22 +186,79 @@ async def _main(args: argparse.Namespace) -> None:
     print(f"\nDone. {total} new candles inserted across {len(symbols)} symbol(s).")
 
 
+async def _export(args: argparse.Namespace) -> None:
+    """Export cached candles to CSV."""
+    import csv as _csv
+
+    symbol = args.symbol.strip().upper()
+    start = _parse_date(args.start)
+    end = _parse_date(args.end)
+    exchange = args.exchange.upper()
+
+    async with async_session_factory() as session:
+        stmt = (
+            select(HistoricalOHLCV)
+            .where(
+                HistoricalOHLCV.symbol == symbol,
+                HistoricalOHLCV.exchange == exchange,
+                HistoricalOHLCV.interval == args.interval,
+                HistoricalOHLCV.timestamp >= start,
+                HistoricalOHLCV.timestamp <= end,
+            )
+            .order_by(HistoricalOHLCV.timestamp)
+        )
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    if not rows:
+        print(f"No data found for {symbol} {args.interval} [{args.start} → {args.end}]")
+        return
+
+    output = args.output or f"{symbol}_{args.interval}_{args.start}_{args.end}.csv"
+    with open(output, "w", newline="") as f:
+        writer = _csv.writer(f)
+        writer.writerow(["timestamp", "open", "high", "low", "close", "volume"])
+        for r in rows:
+            writer.writerow([
+                r.timestamp.isoformat(),
+                float(r.open), float(r.high), float(r.low),
+                float(r.close), float(r.volume),
+            ])
+
+    print(f"Exported {len(rows)} candles to {output}")
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(
-        description="Download Binance historical candles into the database.",
+        description="Download / export Binance historical candles.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python -m app.historical.downloader BTCUSDT 1d 2024-01-01 2024-12-31\n"
-            "  python -m app.historical.downloader ETHUSDT,BTCUSDT 1h 2025-01-01 2025-06-01\n"
-            "  python -m app.historical.downloader BTCUSDT 1d 2024-01-01 2024-12-31 --exchange BINANCE\n"
+            "  python -m app.historical.downloader download BTCUSDT 1d 2024-01-01 2024-12-31\n"
+            "  python -m app.historical.downloader download ETHUSDT,BTCUSDT 1h 2025-01-01 2025-06-01\n"
+            "  python -m app.historical.downloader export BTCUSDT 1m 2024-01-01 2026-01-01\n"
+            "  python -m app.historical.downloader export BTCUSDT 1m 2024-01-01 2026-01-01 -o data.csv\n"
         ),
     )
-    parser.add_argument("symbols", help="Comma-separated symbols (e.g. BTCUSDT,ETHUSDT)")
-    parser.add_argument("interval", help="Candle interval (1m, 5m, 15m, 1h, 4h, 1d, etc.)")
-    parser.add_argument("start", help="Start date (YYYY-MM-DD)")
-    parser.add_argument("end", help="End date (YYYY-MM-DD)")
-    parser.add_argument("--exchange", default="BINANCE", help="Exchange name (default: BINANCE)")
+    sub = parser.add_subparsers(dest="command")
+
+    # download sub-command
+    dl = sub.add_parser("download", help="Download candles from Binance into the DB")
+    dl.add_argument("symbols", help="Comma-separated symbols (e.g. BTCUSDT,ETHUSDT)")
+    dl.add_argument("interval", help="Candle interval (1m, 5m, 15m, 1h, 4h, 1d, etc.)")
+    dl.add_argument("start", help="Start date (YYYY-MM-DD)")
+    dl.add_argument("end", help="End date (YYYY-MM-DD)")
+    dl.add_argument("--exchange", default="BINANCE", help="Exchange name (default: BINANCE)")
+
+    # export sub-command
+    ex = sub.add_parser("export", help="Export cached candles to CSV")
+    ex.add_argument("symbol", help="Symbol (e.g. BTCUSDT)")
+    ex.add_argument("interval", help="Candle interval (1m, 5m, 15m, 1h, 4h, 1d, etc.)")
+    ex.add_argument("start", help="Start date (YYYY-MM-DD)")
+    ex.add_argument("end", help="End date (YYYY-MM-DD)")
+    ex.add_argument("--exchange", default="BINANCE", help="Exchange name (default: BINANCE)")
+    ex.add_argument("-o", "--output", help="Output file path (default: {symbol}_{interval}_{start}_{end}.csv)")
+
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -202,7 +266,13 @@ def cli() -> None:
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
 
-    asyncio.run(_main(args))
+    if args.command == "download":
+        asyncio.run(_main(args))
+    elif args.command == "export":
+        asyncio.run(_export(args))
+    else:
+        # Backward compatibility: if no subcommand, treat positional args as download
+        parser.print_help()
 
 
 if __name__ == "__main__":

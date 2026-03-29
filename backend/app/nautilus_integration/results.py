@@ -37,30 +37,52 @@ def extract_results(engine: BacktestEngine, initial_capital: float) -> dict:
 
 
 def _build_trade_log(cache) -> list[dict]:
-    """Extract closed positions as trades."""
+    """Extract round-trip trades from filled orders.
+
+    In NETTING mode Nautilus tracks a single position per instrument, so
+    ``positions_closed()`` returns at most one entry even when many
+    buy/sell pairs occurred.  Instead we pair filled buy and sell orders
+    chronologically to reconstruct individual round-trip trades.
+    """
+    from nautilus_trader.model.enums import OrderSide, OrderStatus
+
+    filled = sorted(
+        (o for o in cache.orders() if o.status == OrderStatus.FILLED),
+        key=lambda o: o.ts_last,
+    )
+
     trades: list[dict] = []
-    for pos in cache.positions_closed():
-        entry_time = datetime.fromtimestamp(
-            pos.ts_opened / 1_000_000_000, tz=timezone.utc
-        )
-        exit_time = datetime.fromtimestamp(
-            pos.ts_closed / 1_000_000_000, tz=timezone.utc
-        )
-        pnl = float(pos.realized_pnl)
-        commission = sum(float(c) for c in pos.commissions())
-        trades.append(
-            {
-                "entry_time": entry_time.isoformat(),
-                "exit_time": exit_time.isoformat(),
-                "side": "long" if pos.entry.name == "BUY" else "short",
-                "quantity": float(pos.peak_qty),
-                "entry_price": pos.avg_px_open,
-                "exit_price": pos.avg_px_close,
-                "pnl": pnl,
-                "commission": commission,
-            }
-        )
-    # Sort by entry time.
+    pending_entry = None
+
+    for order in filled:
+        if order.side == OrderSide.BUY:
+            # New entry (or replace stale one if consecutive buys)
+            pending_entry = order
+        elif order.side == OrderSide.SELL and pending_entry is not None:
+            entry_time = datetime.fromtimestamp(
+                pending_entry.ts_last / 1_000_000_000, tz=timezone.utc
+            )
+            exit_time = datetime.fromtimestamp(
+                order.ts_last / 1_000_000_000, tz=timezone.utc
+            )
+            entry_price = float(pending_entry.avg_px)
+            exit_price = float(order.avg_px)
+            qty = float(pending_entry.filled_qty)
+            pnl = round((exit_price - entry_price) * qty, 8)
+            trades.append(
+                {
+                    "entry_time": entry_time.isoformat(),
+                    "exit_time": exit_time.isoformat(),
+                    "side": "long",
+                    "quantity": qty,
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "pnl": pnl,
+                    "commission": 0.0,
+                }
+            )
+            pending_entry = None
+
     trades.sort(key=lambda t: t["entry_time"])
     return trades
 

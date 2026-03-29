@@ -91,7 +91,7 @@ export async function apiClient<T = unknown>(
     } else {
       clearTokens();
       if (typeof window !== "undefined") {
-        window.location.href = "/login";
+        window.location.href = "/app/login";
       }
       throw new ApiError(401, "Session expired");
     }

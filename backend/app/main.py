@@ -13,6 +13,7 @@ from app.brokers.router import router as broker_router
 from app.config import settings
 from app.db.session import async_session_factory
 from app.deployments.router import router as deployment_router
+from app.historical.router import router as historical_router
 from app.hosted_strategies.router import router as hosted_strategy_router
 from app.hosted_strategies.router import template_router
 from app.middleware.logging import RequestLoggingMiddleware
@@ -58,6 +59,7 @@ app.include_router(webhook_public_router)
 app.include_router(webhook_config_router)
 app.include_router(paper_trading_router)
 app.include_router(analytics_router)
+app.include_router(historical_router)
 app.include_router(hosted_strategy_router)
 app.include_router(template_router)
 app.include_router(deployment_router)

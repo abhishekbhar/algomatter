@@ -43,7 +43,10 @@ function normalizeBacktest(data: unknown): BacktestDisplay {
   if (ec) {
     const byTime = new Map<string, { time: string; value: number }>();
     for (const p of ec) {
-      const time = String(p.time ?? p.timestamp ?? "").split(" ")[0];
+      const raw = p.time ?? p.timestamp;
+      if (!raw) continue; // skip entries with no timestamp (e.g. initial equity point)
+      const time = String(raw).split("T")[0].split(" ")[0];
+      if (!time || !/^\d{4}-\d{2}-\d{2}/.test(time)) continue;
       byTime.set(time, { time, value: Number(p.value ?? p.equity ?? 0) });
     }
     out.equity_curve = Array.from(byTime.values());
