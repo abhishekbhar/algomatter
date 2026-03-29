@@ -1,0 +1,132 @@
+---
+title: "Understanding Backtest Results"
+description: "How to read and interpret backtest results — equity curves, performance metrics, trade logs, and drawdown charts"
+---
+
+# Understanding Backtest Results
+
+After a backtest completes, Algomatter presents a results dashboard with charts, metrics, and a trade log. This guide explains what each component means and how to use them to evaluate your strategy.
+
+## Equity curve
+
+The equity curve is a line chart showing your portfolio's total value over the backtest period. It is the single most important visualization.
+
+**What to look for:**
+
+- **Smooth upward slope:** The strategy is consistently profitable across different market conditions.
+- **Steep drops followed by recovery:** The strategy experiences drawdowns but recovers. Check the depth and duration of drops.
+- **Flat sections:** The strategy is inactive (no trades). This could mean your entry conditions are too strict.
+- **Steady decline:** The strategy is losing money. Revisit your logic.
+
+A good equity curve rises over time with manageable dips. A great equity curve does so consistently, not just in one lucky period.
+
+## Performance metrics
+
+### Total return
+
+The overall percentage gain or loss from start to finish.
+
+`Total Return = (Final Equity - Starting Capital) / Starting Capital * 100`
+
+A positive return is necessary but not sufficient — you also need to consider *how* the return was achieved (smoothly vs. with wild swings).
+
+### Sharpe ratio
+
+Measures risk-adjusted return. A higher Sharpe means better returns per unit of risk.
+
+| Sharpe ratio | Interpretation                    |
+|--------------|-----------------------------------|
+| < 0          | Losing money                      |
+| 0 - 1.0      | Below average risk-adjusted return |
+| 1.0 - 2.0    | Good                              |
+| 2.0 - 3.0    | Very good                         |
+| > 3.0        | Excellent (verify it's not overfitting) |
+
+> A Sharpe ratio above 3.0 in a backtest often signals overfitting. Be cautious and test across different time periods.
+
+### Max drawdown
+
+The largest peak-to-trough decline in portfolio value during the backtest, expressed as a percentage.
+
+For example, if your equity peaked at ₹12,000 and then dropped to ₹9,600 before recovering, the max drawdown is 20%.
+
+A max drawdown of 20-30% is common for active crypto strategies. Above 50% is a serious red flag — most traders cannot psychologically withstand losses that deep.
+
+### Win rate
+
+The percentage of trades that were profitable.
+
+`Win Rate = Winning Trades / Total Trades * 100`
+
+Win rate alone is not meaningful. A strategy with a 30% win rate can be highly profitable if the average win is much larger than the average loss.
+
+### Profit factor
+
+The ratio of gross profits to gross losses.
+
+`Profit Factor = Total Profit from Winners / Total Loss from Losers`
+
+| Profit factor | Interpretation         |
+|---------------|------------------------|
+| < 1.0         | Losing money overall   |
+| 1.0 - 1.5     | Marginal profitability |
+| 1.5 - 2.0     | Solid                  |
+| > 2.0         | Strong                 |
+
+### Average trade duration
+
+How long the strategy holds a position on average. This helps you understand the trading style:
+
+- **Minutes to hours:** Scalping / intraday
+- **Hours to days:** Swing trading
+- **Days to weeks:** Position trading
+
+### Total trades
+
+The number of completed round-trip trades. More trades give you more statistical confidence in the results. A backtest with only 5 trades is not reliable, even if they were all winners.
+
+> Aim for at least 30 completed trades to have meaningful statistical significance. If your backtest produces fewer, try extending the date range or using a shorter timeframe.
+
+## Trade log
+
+The trade log lists every order executed during the backtest:
+
+| Column      | Description                           |
+|-------------|---------------------------------------|
+| Timestamp   | When the order was placed             |
+| Side        | Buy or Sell                           |
+| Symbol      | Trading pair                          |
+| Quantity    | Amount traded                         |
+| Price       | Execution price (after slippage)      |
+| P&L         | Profit or loss (for sell orders)      |
+| Cumulative  | Running total P&L                     |
+
+Use the trade log to spot patterns: Are most losses happening at certain times? Are there clusters of losing trades? Does the strategy overtrade?
+
+## Drawdown chart
+
+The drawdown chart shows how far below the previous equity peak your portfolio has fallen at each point in time. It is the inverse of the equity curve's highs.
+
+**What to look for:**
+
+- **Shallow, short drawdowns:** The strategy recovers quickly. Good sign.
+- **Deep, prolonged drawdowns:** The strategy takes a long time to recover from losses. Risky.
+- **Drawdowns coinciding with known market events:** Check if your strategy handles crashes and black swan events.
+
+## Comparing strategies
+
+To compare two strategies fairly:
+
+1. Use the **same symbol, timeframe, date range, and starting capital** for both.
+2. Enable the **same slippage and commission settings**.
+3. Compare Sharpe ratio and max drawdown first, then total return.
+
+A strategy with lower total return but much lower max drawdown may be the better choice for live trading.
+
+> Past backtest results do not guarantee future performance. Backtesting shows how a strategy *would have* performed, not how it *will* perform.
+
+## Next steps
+
+- [Slippage and Commission](/docs/backtesting/slippage-commission) — ensure your backtest models real-world costs
+- [Paper Trading](/docs/trading/paper-trading) — validate backtest results with live market data
+- [Strategy Templates](/docs/strategies/templates) — try different strategies and compare results

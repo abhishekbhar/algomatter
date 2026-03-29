@@ -1,0 +1,151 @@
+---
+title: "Mapping Templates"
+description: "Map webhook JSON payloads to Algomatter trading actions using JSONPath expressions"
+---
+
+# Mapping Templates
+
+When a webhook signal arrives, Algomatter needs to know how to extract the trading action, symbol, quantity, and other fields from the JSON payload. Mapping templates define that translation layer using JSONPath expressions.
+
+## What is a mapping template?
+
+A mapping template is a set of rules that map fields in an incoming JSON payload to Algomatter's internal fields. Each rule is a JSONPath expression pointing to the value in your payload.
+
+This means you can accept signals from *any* source — TradingView, custom bots, third-party services — as long as they send JSON. You just tell Algomatter where to find the data.
+
+## Algomatter fields
+
+Every webhook signal is mapped to these internal fields:
+
+| Field      | Required | Description                                 |
+|------------|----------|---------------------------------------------|
+| `action`   | Yes      | The trade action: `"buy"` or `"sell"`       |
+| `symbol`   | Yes      | The trading pair (e.g., `"BTC/USDT"`)       |
+| `qty`      | No       | Order quantity                              |
+| `price`    | No       | Reference price (informational)             |
+
+## JSONPath basics
+
+JSONPath is a query language for JSON, similar to XPath for XML. Here are the most common patterns:
+
+| Expression        | Meaning                                     |
+|-------------------|---------------------------------------------|
+| `$.action`        | Top-level field named `action`              |
+| `$.data.signal`   | Nested field: `data` then `signal`          |
+| `$.orders[0].side`| First element of `orders` array, `side` field|
+| `$.meta.pair`     | Nested field: `meta` then `pair`            |
+
+The `$` represents the root of the JSON document, and you navigate down with dot notation or brackets.
+
+## Creating a mapping template
+
+1. In your webhook strategy, go to the **Mapping** tab.
+2. For each Algomatter field, enter the JSONPath expression that points to the corresponding value in your payload.
+3. Click **Save Mapping**.
+
+### Example: Standard TradingView payload
+
+If your TradingView alert sends:
+
+```json
+{
+  "action": "buy",
+  "symbol": "BTC/USDT",
+  "qty": 0.05
+}
+```
+
+The mapping is straightforward:
+
+| Algomatter field | JSONPath     |
+|------------------|-------------|
+| Action           | `$.action`  |
+| Symbol           | `$.symbol`  |
+| Quantity         | `$.qty`     |
+
+### Example: Nested payload from a custom bot
+
+If your signal source sends a more complex structure:
+
+```json
+{
+  "signal": {
+    "type": "entry",
+    "direction": "long",
+    "ticker": "ETHUSDT",
+    "amount": 1.5
+  },
+  "meta": {
+    "source": "my-bot",
+    "timestamp": "2025-07-14T10:30:00Z"
+  }
+}
+```
+
+You need to map nested paths and handle value differences:
+
+| Algomatter field | JSONPath                |
+|------------------|------------------------|
+| Action           | `$.signal.direction`   |
+| Symbol           | `$.signal.ticker`      |
+| Quantity         | `$.signal.amount`      |
+
+## Built-in value transforms
+
+Sometimes the incoming values don't match Algomatter's expected format exactly. Mapping templates support transforms:
+
+### Action aliases
+
+Algomatter recognizes these action values automatically:
+
+| Incoming value                  | Interpreted as |
+|---------------------------------|----------------|
+| `"buy"`, `"long"`, `"entry"`   | Buy            |
+| `"sell"`, `"short"`, `"exit"`, `"close"` | Sell  |
+
+So if your bot sends `"direction": "long"`, Algomatter understands it as a buy order without extra configuration.
+
+### Symbol normalization
+
+Algomatter normalizes symbol formats automatically:
+
+- `"BTCUSDT"` becomes `"BTC/USDT"`
+- `"btc/usdt"` becomes `"BTC/USDT"`
+- `"BTC-USDT"` becomes `"BTC/USDT"`
+
+You don't need to worry about formatting differences between sources.
+
+## Default values
+
+If a field is not required (like `qty`), you can set a **default value** in the mapping template. When the incoming payload doesn't include that field, the default is used.
+
+For example, set the default quantity to `0.01` and it will be used whenever the webhook payload omits the `qty` field.
+
+## Testing your mapping
+
+Use the **Test Mapping** button in the mapping editor. Paste a sample JSON payload and Algomatter will show you exactly how each field is parsed:
+
+```
+Input:  {"signal": {"direction": "long", "ticker": "ETHUSDT", "amount": 1.5}}
+Result: action=buy, symbol=ETH/USDT, qty=1.5
+```
+
+This is the fastest way to verify your mapping before connecting a live signal source.
+
+> Always test your mapping with real sample payloads from your signal source. Edge cases — like missing fields or unexpected formats — are much easier to catch during testing.
+
+## Pre-built templates
+
+Algomatter includes mapping templates for common signal sources:
+
+- **TradingView Standard** — maps the default TradingView alert payload format
+- **3Commas** — maps 3Commas signal bot payloads
+- **Custom JSON** — a blank template for any JSON format
+
+Select a pre-built template from the dropdown when creating a new webhook strategy to save time.
+
+## Next steps
+
+- [Webhook Signals & TradingView](/docs/strategies/webhooks-tradingview) — full webhook setup walkthrough
+- [Paper Trading](/docs/trading/paper-trading) — test webhook strategies safely before going live
+- [Going Live](/docs/trading/going-live) — deploy your webhook strategy with real capital

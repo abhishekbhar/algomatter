@@ -21,6 +21,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             nodejs_20
+            nginx
             python3
             python3Packages.pip
             python3Packages.virtualenv

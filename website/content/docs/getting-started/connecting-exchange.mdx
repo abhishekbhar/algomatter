@@ -1,0 +1,85 @@
+---
+title: "Connecting an Exchange"
+description: "How to connect your Binance, Exchange1, Bybit, or OKX account to Algomatter with API keys"
+---
+
+# Connecting an Exchange
+
+Before you can paper trade or go live, you need to connect at least one exchange. Algomatter supports **Binance**, **Exchange1**, **Bybit**, and **OKX**. This guide walks you through the process step by step.
+
+## Supported exchanges
+
+| Exchange   | Spot | Futures | Paper Trading |
+|------------|------|---------|---------------|
+| Binance    | Yes  | Yes     | Yes           |
+| Exchange1  | Yes  | Yes     | Yes           |
+| Bybit      | Yes  | Yes     | Yes           |
+| OKX        | Yes  | Yes     | Yes           |
+
+> You do not need an exchange connection to run backtests. Algomatter provides historical data for all supported pairs.
+
+## Step 1: Create an API key on your exchange
+
+Each exchange has its own process, but the general steps are the same:
+
+1. Log in to your exchange account.
+2. Navigate to **API Management** (usually under Account or Security settings).
+3. Click **Create API Key** and give it a descriptive label like `algomatter-trading`.
+4. Set permissions to **read** and **trade only**. **Do not enable withdrawal permissions.**
+5. If the exchange supports IP whitelisting, add the Algomatter IP addresses shown in your dashboard under **Brokers → IP Whitelist**.
+6. Copy both the **API Key** and **Secret Key** immediately — most exchanges only show the secret once.
+
+> **Security best practice:** Never grant withdrawal permissions to your API key. Algomatter only needs the ability to read account data and place trades. Keeping withdrawal disabled means your funds stay safe even if a key is compromised.
+
+### Exchange-specific notes
+
+**Binance:** Make sure you enable "Spot & Margin Trading" under API restrictions. If you plan to trade futures, also enable "Futures" permissions.
+
+**Exchange1:** Generate your keys from the API section in Settings. Select the "Trade" permission scope.
+
+**Bybit:** Create a "System-generated" API key. Under permissions, enable "Read-Write" for Trade and "Read-Only" for Account.
+
+**OKX:** You will need to create a passphrase during API key creation. Keep this safe — Algomatter requires it along with the key and secret.
+
+## Step 2: Add the connection in Algomatter
+
+1. In the Algomatter sidebar, click **Brokers**.
+2. Click **Add Broker**.
+3. Select your exchange from the dropdown.
+4. Enter your **API Key** and **Secret Key**. For OKX, also enter your **Passphrase**.
+5. Click **Save**.
+
+Algomatter encrypts your API credentials at rest using AES-256 and never stores them in plaintext.
+
+## Step 3: Test the connection
+
+After saving, click the **Test Connection** button next to your broker. Algomatter will make a read-only request to verify:
+
+- The API key is valid and not expired
+- The required permissions are enabled
+- Network connectivity to the exchange is healthy
+
+If the test passes, you will see a green checkmark and your account balance.
+
+## Troubleshooting
+
+### "Invalid API key" error
+Double-check that you copied the full key and secret without extra spaces. Some exchanges require you to wait a few minutes after creating a key before it becomes active.
+
+### "Insufficient permissions" error
+Revisit your exchange API settings and ensure trade permissions are enabled.
+
+### "IP not whitelisted" error
+If your exchange enforces IP restrictions, make sure you have added the Algomatter IP addresses. You can find these under **Brokers → IP Whitelist** in your dashboard.
+
+## Managing multiple exchanges
+
+You can connect as many exchanges as you need. Each strategy deployment is tied to a specific broker connection, so you can run different strategies on different exchanges simultaneously.
+
+To remove a connection, click the trash icon next to the broker in the **Brokers** page. This will not cancel any open orders — make sure to stop any running strategies first.
+
+## Next steps
+
+- [Your First Strategy](/docs/getting-started/first-strategy) — write and test your first trading strategy
+- [Paper Trading](/docs/trading/paper-trading) — test strategies with virtual capital against live data
+- [Going Live](/docs/trading/going-live) — deploy your strategy with real capital

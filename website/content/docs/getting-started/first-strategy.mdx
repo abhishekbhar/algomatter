@@ -1,0 +1,120 @@
+---
+title: "Your First Strategy"
+description: "Write your first algorithmic trading strategy in Python using the Algomatter SDK"
+---
+
+# Your First Strategy
+
+In this guide, you will write a simple RSI-based trading strategy from scratch, backtest it, and understand the core building blocks of every Algomatter strategy.
+
+## Creating a new strategy
+
+1. Navigate to **Strategies → Hosted** in the sidebar.
+2. Click **New Strategy**.
+3. Give it a name — something like `my-first-rsi-strategy`.
+4. You will see the strategy editor with a starter template.
+
+The editor provides syntax highlighting, auto-save, and version history, so you can always revert to a previous version if you make a mistake.
+
+## The Strategy class
+
+Every Algomatter strategy is a Python class that extends the `Strategy` base class. At a minimum, you need to implement the `on_candle` method:
+
+```python
+from algomatter import Strategy
+
+class MyStrategy(Strategy):
+    def on_candle(self, candle):
+        pass  # Your logic goes here
+```
+
+The `on_candle` method is called every time a new candlestick closes (e.g., every 1 hour if you chose a 1H timeframe). This is where your trading decisions happen.
+
+## Accessing candle data
+
+The `candle` object passed to `on_candle` gives you everything you need:
+
+| Property        | Description                        |
+|-----------------|------------------------------------|
+| `candle.open`   | Opening price                      |
+| `candle.high`   | Highest price in the period        |
+| `candle.low`    | Lowest price in the period         |
+| `candle.close`  | Closing price                      |
+| `candle.volume` | Total volume traded                |
+| `candle.symbol` | The trading pair (e.g., "BTC/USDT")|
+| `candle.rsi`    | 14-period RSI value                |
+| `candle.sma_20` | 20-period Simple Moving Average    |
+| `candle.ema_12` | 12-period Exponential Moving Avg   |
+
+> Algomatter pre-computes common indicators on each candle so you can use them directly without importing extra libraries. See the [Python SDK Guide](/docs/strategies/python-sdk) for the full list.
+
+## Placing orders
+
+Use `self.buy()` and `self.sell()` to place orders:
+
+```python
+# Buy 0.1 BTC
+self.buy(candle.symbol, qty=0.1)
+
+# Sell entire position
+self.sell(candle.symbol)
+```
+
+When you call `self.sell()` without specifying a quantity, Algomatter closes your entire position in that symbol.
+
+## A complete RSI strategy
+
+Here is a simple mean-reversion strategy: buy when RSI drops below 30 (oversold), sell when it rises above 70 (overbought).
+
+```python
+from algomatter import Strategy
+
+class RSIMeanReversion(Strategy):
+    def on_candle(self, candle):
+        # Skip if RSI hasn't been calculated yet
+        if candle.rsi is None:
+            return
+
+        # Buy when oversold
+        if candle.rsi < 30 and not self.position:
+            self.buy(candle.symbol, qty=0.1)
+
+        # Sell when overbought
+        elif candle.rsi > 70 and self.position:
+            self.sell(candle.symbol)
+```
+
+Let's break it down:
+
+1. **Guard clause:** We skip early candles where RSI hasn't accumulated enough data.
+2. **Buy condition:** RSI below 30 *and* we don't already hold a position.
+3. **Sell condition:** RSI above 70 *and* we have an open position.
+
+The `self.position` property is truthy when you hold a position in the current symbol, preventing duplicate buys.
+
+## Running your first backtest
+
+With your strategy written, click **Backtest** in the top toolbar and configure:
+
+- **Symbol:** BTC/USDT
+- **Timeframe:** 4H
+- **Date range:** Last 6 months
+- **Starting capital:** ₹10,000
+
+Click **Run**. In a few seconds, you will see the equity curve, trade log, and performance metrics.
+
+> Don't worry if your first strategy loses money — most strategies need iteration. The goal right now is to understand the workflow.
+
+## Tips for getting started
+
+- **Start simple.** A two-condition strategy is easier to debug and understand than one with 10 indicators.
+- **Check your guards.** Always verify that indicators are not `None` before using them in conditions.
+- **Use `self.position`** to avoid entering the same trade multiple times.
+- **Iterate quickly.** Adjust thresholds (e.g., RSI 25 instead of 30) and re-run the backtest to see the impact.
+
+## Next steps
+
+- [Python SDK Guide](/docs/strategies/python-sdk) — full reference for all available methods and indicators
+- [Strategy Templates](/docs/strategies/templates) — pre-built strategies you can customize
+- [Running a Backtest](/docs/backtesting/running-backtest) — deep dive into backtest configuration
+- [Understanding Results](/docs/backtesting/understanding-results) — learn to read your backtest metrics

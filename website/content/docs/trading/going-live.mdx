@@ -1,0 +1,119 @@
+---
+title: "Going Live"
+description: "Deploy your strategy with real capital — prerequisites, deployment, monitoring, and risk management"
+---
+
+# Going Live
+
+Going live means your strategy will place real orders on a real exchange with real money. This guide covers everything you need to do before, during, and after flipping the switch.
+
+## Prerequisites checklist
+
+Before deploying to live, make sure you have completed each of these steps:
+
+- [ ] **Backtest passes:** Your strategy is profitable across multiple date ranges with realistic [slippage and commission](/docs/backtesting/slippage-commission) settings.
+- [ ] **Paper trading period:** You have run the strategy in [paper trading](/docs/trading/paper-trading) for at least 2 weeks and results are consistent with the backtest.
+- [ ] **Exchange connected:** Your exchange broker is set up and tested in the [Brokers](/docs/getting-started/connecting-exchange) page.
+- [ ] **Sufficient balance:** Your exchange account has enough funds for the strategy's position sizing.
+- [ ] **Risk limits set:** You have configured the [kill switch](/docs/trading/kill-switch) and maximum drawdown limits.
+
+> Do not skip the paper trading step. Even experienced quant developers paper trade new strategies before going live.
+
+## Deploying to live
+
+1. Open your strategy in **Strategies → Hosted**.
+2. Click **Deploy** in the top toolbar.
+3. Select **Live Trading**.
+4. Configure the deployment:
+   - **Symbol:** Trading pair (e.g., BTC/USDT)
+   - **Timeframe:** Candle interval
+   - **Broker:** Select your exchange connection
+   - **Capital allocation:** How much of your exchange balance the strategy can use
+5. Review the confirmation dialog carefully — it shows the symbol, exchange, and capital at risk.
+6. Click **Confirm and Start**.
+
+Your strategy is now live. Orders will be placed on your exchange within seconds of each candle close.
+
+## Monitoring live positions
+
+The **Live Trading** dashboard gives you real-time visibility:
+
+### Key metrics to watch
+
+- **Current position:** What you are holding right now, including unrealized P&L.
+- **Today's P&L:** Profit or loss since midnight UTC.
+- **Total P&L:** Cumulative profit or loss since deployment.
+- **Equity curve:** Real-time portfolio value chart.
+
+### Trade log
+
+Every order placed by the strategy is logged with:
+- Timestamp
+- Side (buy/sell)
+- Quantity and price
+- Fees paid
+- Running P&L
+
+### Strategy logs
+
+Messages from `self.log()` appear here. Use these to debug behavior or monitor strategy state.
+
+## Risk management settings
+
+Before or during a live deployment, configure these safety nets:
+
+### Maximum drawdown limit
+
+Set the maximum percentage your equity can drop from its peak before the strategy is automatically stopped. For example, setting this to 15% means the strategy will halt if equity drops 15% from its highest point.
+
+### Maximum daily loss
+
+Set a daily loss limit (absolute or percentage). If reached, the strategy pauses for the rest of the day and resumes the next trading day.
+
+### Position size limits
+
+Cap the maximum position size the strategy can hold. This prevents bugs or unexpected conditions from taking oversized positions.
+
+> Start with conservative risk limits. You can always loosen them as you gain confidence. A 10-15% max drawdown limit is a reasonable starting point.
+
+## What to watch for
+
+### First few days
+
+- **Verify order execution:** Check that orders are actually filling on the exchange (not just appearing in the dashboard). Log in to your exchange and confirm.
+- **Compare to paper:** Live fills should be similar to paper trading. If you see significantly worse execution, investigate slippage or liquidity issues.
+- **Check fees:** Verify the commission rates match your expectations.
+
+### Ongoing monitoring
+
+- **Weekly review:** Look at the equity curve and metrics weekly. Compare to backtest projections.
+- **Drawdown alerts:** Algomatter sends notifications when drawdown exceeds thresholds. Pay attention to these.
+- **Market regime changes:** A strategy that works in a trending market may struggle in a range-bound one. Be prepared to pause and re-evaluate.
+
+## When to stop a strategy
+
+Stop your strategy if:
+
+- **Drawdown exceeds your comfort level**, even if the kill switch hasn't triggered yet.
+- **Results deviate significantly from backtest** and paper trading expectations over multiple weeks.
+- **Market conditions change fundamentally** (e.g., a regime shift from trending to choppy).
+- **You discover a bug** in the strategy logic.
+- **Exchange issues** arise (API errors, connectivity problems, abnormal spreads).
+
+To stop, click the **Stop** button on the Live Trading dashboard. This halts the strategy immediately. Open positions remain on the exchange — you can close them manually or let the next deployment handle them.
+
+## Scaling up
+
+Once a strategy has been running live successfully for several weeks:
+
+1. Increase capital allocation gradually (e.g., 2x, then 3x).
+2. Paper trade at the new size first to verify position sizing works correctly.
+3. Monitor the first few trades at the new size closely.
+
+Never jump from paper trading straight to your full intended capital. Scale in gradually.
+
+## Next steps
+
+- [Kill Switch & Safety](/docs/trading/kill-switch) — understand all safety features
+- [Understanding Results](/docs/backtesting/understanding-results) — review your performance metrics
+- [Connecting an Exchange](/docs/getting-started/connecting-exchange) — set up additional exchange connections

@@ -1,0 +1,111 @@
+---
+title: "Running a Backtest"
+description: "How to configure and run a backtest in Algomatter — symbol, timeframe, capital, and execution settings"
+---
+
+# Running a Backtest
+
+Backtesting lets you simulate your strategy against historical market data to see how it would have performed. Algomatter's backtesting engine is powered by Nautilus Trader, providing realistic order simulation with slippage and commission modeling.
+
+## Starting a backtest
+
+1. Open your strategy in **Strategies → Hosted**.
+2. Click the **Backtest** button in the top toolbar.
+3. Configure the parameters (see below).
+4. Click **Run**.
+
+## Configuration options
+
+### Symbol
+
+Select the trading pair you want to test. Examples: `BTC/USDT`, `ETH/USDT`, `SOL/USDT`.
+
+You can only backtest one symbol at a time. To compare performance across pairs, run separate backtests and review the results side by side.
+
+### Timeframe
+
+Choose the candle interval. This determines how often `on_candle` is called.
+
+| Timeframe | Use case                                        |
+|-----------|--------------------------------------------------|
+| 1m        | Scalping strategies (generates many signals)     |
+| 5m        | Short-term trading                               |
+| 15m       | Intraday strategies                              |
+| 1H        | Swing trading (good balance of signals and noise) |
+| 4H        | Medium-term trend following                      |
+| 1D        | Position trading, long-term strategies           |
+
+> Shorter timeframes produce more candles, which means longer backtest runtimes and more signals. Start with 4H or 1H while developing, then test on finer granularity once the logic is solid.
+
+### Date range
+
+Set the start and end date for the backtest. Algomatter provides historical data going back several years for major pairs.
+
+**Tips for picking a date range:**
+
+- Test across **at least 6 months** to capture different market conditions.
+- Include both bull and bear periods to see how the strategy behaves in each.
+- Avoid testing only on a known pump — your results will be misleadingly good.
+
+### Starting capital
+
+The initial cash balance for the backtest, in the quote currency (e.g., USDT). A common starting value is ₹10,000.
+
+Your starting capital affects position sizing if your strategy uses `self.portfolio.equity` or `self.portfolio.balance` to calculate order quantities.
+
+### Slippage
+
+Controls how much simulated price impact is applied to your orders. Options:
+
+- **None (0%):** Orders fill at the exact candle price. Optimistic.
+- **Fixed amount:** A fixed offset added to buys and subtracted from sells.
+- **Percentage (default: 0.05%):** A percentage of the price. Realistic for liquid pairs.
+
+See [Slippage and Commission](/docs/backtesting/slippage-commission) for a deeper explanation.
+
+### Commission
+
+The simulated trading fee per order. Defaults to the standard exchange rate (typically 0.1% per trade). You can adjust this to match your actual fee tier.
+
+## Running the backtest
+
+After clicking **Run**, you will see:
+
+1. **A progress bar** showing how many candles have been processed.
+2. **Real-time equity updates** as the simulation advances.
+3. **Completion summary** with total runtime and trade count.
+
+Most backtests complete in a few seconds. Longer date ranges with 1m candles may take up to a minute.
+
+## Viewing results
+
+When the backtest finishes, Algomatter displays a full results dashboard:
+
+- **Equity curve** — a chart of your portfolio value over time
+- **Performance metrics** — total return, Sharpe ratio, max drawdown, win rate, and more
+- **Trade log** — every buy and sell with timestamps, prices, and P&L
+- **Drawdown chart** — visualizes the peaks and valleys of your equity
+
+See [Understanding Results](/docs/backtesting/understanding-results) for a detailed breakdown of each metric.
+
+## Comparing backtests
+
+Every backtest run is saved automatically. You can:
+
+- View the history of all runs for a strategy under the **Backtest History** tab.
+- Compare two runs side by side to see the impact of a parameter change.
+- Export results as CSV for further analysis.
+
+## Common mistakes
+
+- **Overfitting:** Tweaking parameters until the backtest looks perfect usually means the strategy won't hold up in live trading. Keep strategies simple.
+- **Ignoring slippage and fees:** A strategy that returns 5% with zero slippage might be flat or negative with realistic costs. Always enable them.
+- **Survivorship bias:** Testing only on top-performing assets today. Those assets were not always obvious winners.
+
+> Past backtest results do not guarantee future performance. Always follow up backtesting with a [paper trading](/docs/trading/paper-trading) period using live market data.
+
+## Next steps
+
+- [Understanding Results](/docs/backtesting/understanding-results) — learn what each metric means
+- [Slippage and Commission](/docs/backtesting/slippage-commission) — configure realistic execution costs
+- [Paper Trading](/docs/trading/paper-trading) — validate results with live data

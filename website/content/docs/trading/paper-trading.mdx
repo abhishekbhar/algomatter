@@ -1,0 +1,103 @@
+---
+title: "Paper Trading"
+description: "Test your strategies with virtual capital against live market data before risking real money"
+---
+
+# Paper Trading
+
+Paper trading lets you run your strategy against live market data using virtual capital. It is the bridge between backtesting and live trading — a critical step that many traders skip at their own expense.
+
+## What is paper trading?
+
+In paper mode, Algomatter:
+
+- Connects to **real-time market data** from your selected exchange.
+- Executes your strategy logic on each new candle, exactly as it would in live mode.
+- Simulates order fills using live prices and applies slippage/commission.
+- Tracks positions, equity, and P&L — all with **virtual capital** (no real money at risk).
+
+It is the closest you can get to live trading without actually trading.
+
+## Deploying a strategy to paper
+
+1. Open your strategy in **Strategies → Hosted**.
+2. Click **Deploy** in the top toolbar.
+3. Select **Paper Trading**.
+4. Configure the deployment:
+   - **Symbol:** The trading pair (e.g., BTC/USDT)
+   - **Timeframe:** Candle interval (e.g., 4H)
+   - **Starting capital:** Virtual capital amount (e.g., ₹10,000)
+   - **Exchange:** Which exchange's data to use
+5. Click **Start**.
+
+Your strategy is now running. You can monitor it from the **Live Trading** dashboard.
+
+## Monitoring paper positions
+
+The **Live Trading** dashboard shows:
+
+- **Current position:** Symbol, side, quantity, entry price, unrealized P&L
+- **Equity curve:** Real-time chart of your virtual portfolio value
+- **Trade log:** Every order filled since deployment, with timestamps and prices
+- **Strategy logs:** Messages from `self.log()` calls in your strategy code
+
+> Check your paper trading dashboard at least once a day. Look for unexpected trades, unusual position sizes, or error messages in the logs.
+
+## Paper trading vs. live trading
+
+Paper trading is very close to live, but there are some differences to be aware of:
+
+| Factor              | Paper trading                    | Live trading                     |
+|---------------------|----------------------------------|----------------------------------|
+| Market data         | Real, live prices                | Real, live prices                |
+| Order execution     | Simulated at market price        | Actual exchange execution        |
+| Slippage            | Simulated (configurable)         | Real (varies by market depth)    |
+| Latency             | Minimal                          | Real network/exchange latency    |
+| Partial fills       | Not simulated                    | Can happen on real exchanges     |
+| Emotional pressure  | None (it's virtual money)        | Very real                        |
+
+The biggest gap is psychological. A strategy that makes you comfortable in paper mode may feel very different when real money is at stake. Be prepared for that.
+
+## How long should you paper trade?
+
+There is no universal answer, but here are guidelines:
+
+- **Minimum:** 2 weeks. Enough to see the strategy in action across a few market conditions.
+- **Recommended:** 1-3 months. Captures enough variation to build confidence.
+- **Before increasing size:** Paper trade again at the new capital level to verify position sizing behaves as expected.
+
+### What to look for during paper trading
+
+1. **Consistency with backtest:** Are the live results roughly in line with what the backtest predicted? Small differences are normal; large deviations suggest the backtest was overfit.
+2. **Trade frequency:** Is the strategy trading as often as expected? Too few or too many trades could indicate a logic issue.
+3. **Drawdown behavior:** How does the strategy handle losing periods? Can you tolerate the drawdowns emotionally?
+4. **Edge cases:** Does the strategy behave correctly during volatile events, weekends, or low-liquidity periods?
+
+## Interpreting paper results
+
+Paper trading results use the same metrics as backtests:
+
+- **Total return** — overall profit/loss percentage
+- **Sharpe ratio** — risk-adjusted return
+- **Max drawdown** — largest peak-to-trough drop
+- **Win rate** — percentage of profitable trades
+
+Compare these directly to your backtest results for the same strategy. If the paper results are significantly worse, it may mean the backtest was overfitted or that live market dynamics are exposing a weakness.
+
+> If your paper trading results are consistently close to your backtest results over a multi-week period, that is a strong signal the strategy is robust.
+
+## Stopping and restarting
+
+You can stop a paper deployment at any time by clicking **Stop** on the Live Trading dashboard. Stopping immediately halts the strategy — no more orders will be placed.
+
+To restart, click **Deploy → Paper** again. You can choose to start fresh with new capital or continue from the current state.
+
+## Moving to live
+
+When you are satisfied with paper trading results, the next step is going live. See [Going Live](/docs/trading/going-live) for the full checklist.
+
+## Next steps
+
+- [Going Live](/docs/trading/going-live) — deploy your strategy with real capital
+- [Kill Switch & Safety](/docs/trading/kill-switch) — safety features to protect your capital
+- [Understanding Results](/docs/backtesting/understanding-results) — deep dive into performance metrics
