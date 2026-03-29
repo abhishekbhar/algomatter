@@ -6,7 +6,7 @@ import { AnimatedCounter } from "@/components/shared/AnimatedCounter";
 const stats = [
   { target: 1200, suffix: "+", label: "Backtests Run" },
   { target: 50, suffix: "+", label: "Active Strategies" },
-  { target: 2.4, prefix: "$", suffix: "M", label: "Volume Traded" },
+  { target: 2.4, prefix: "₹", suffix: "M", label: "Volume Traded" },
   { target: 99.9, suffix: "%", label: "Uptime" },
 ];
 

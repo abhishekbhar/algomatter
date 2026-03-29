@@ -94,8 +94,8 @@ export default function FeaturesPage() {
               <span className="text-slate-muted">Mode</span>
               <span className="rounded bg-amber-500/20 px-2 py-0.5 text-amber-400 font-semibold">PAPER</span>
             </div>
-            <div className="flex justify-between"><span className="text-slate-muted">Balance</span><span className="text-slate-heading font-mono">$10,000.00</span></div>
-            <div className="flex justify-between"><span className="text-slate-muted">Open P&L</span><span className="text-green-400 font-mono">+$342.50</span></div>
+            <div className="flex justify-between"><span className="text-slate-muted">Balance</span><span className="text-slate-heading font-mono">₹10,000.00</span></div>
+            <div className="flex justify-between"><span className="text-slate-muted">Open P&L</span><span className="text-green-400 font-mono">+₹342.50</span></div>
             <div className="flex justify-between"><span className="text-slate-muted">Trades Today</span><span className="text-slate-heading font-mono">7</span></div>
           </div>
         }
@@ -111,9 +111,9 @@ export default function FeaturesPage() {
               <span className="text-slate-muted">BTC/USDT Long</span>
               <span className="rounded bg-green-500/20 px-2 py-0.5 text-green-400 font-semibold">● LIVE</span>
             </div>
-            <div className="flex justify-between"><span className="text-slate-muted">Entry</span><span className="text-slate-heading font-mono">$67,420.00</span></div>
-            <div className="flex justify-between"><span className="text-slate-muted">Current</span><span className="text-slate-heading font-mono">$68,660.00</span></div>
-            <div className="flex justify-between"><span className="text-slate-muted">Unrealized P&L</span><span className="text-green-400 font-mono">+$1,240.00</span></div>
+            <div className="flex justify-between"><span className="text-slate-muted">Entry</span><span className="text-slate-heading font-mono">₹67,420.00</span></div>
+            <div className="flex justify-between"><span className="text-slate-muted">Current</span><span className="text-slate-heading font-mono">₹68,660.00</span></div>
+            <div className="flex justify-between"><span className="text-slate-muted">Unrealized P&L</span><span className="text-green-400 font-mono">+₹1,240.00</span></div>
             <div className="mt-3 pt-3 border-t border-brand-indigo/10">
               <span className="rounded bg-red-500/20 px-3 py-1.5 text-red-400 font-semibold text-xs">⚠ Kill Switch</span>
             </div>

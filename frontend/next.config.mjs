@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  basePath: "/app",
   async headers() {
     return [
       {
@@ -13,7 +14,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob:",
               "font-src 'self' data:",
-              "connect-src 'self' http://localhost:8000",
+              "connect-src 'self' http://localhost:8000 http://localhost:3000",
               "frame-ancestors 'none'",
             ].join("; "),
           },

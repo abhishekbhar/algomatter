@@ -8,7 +8,7 @@ interface PricingCardsProps {
 const tiers = [
   {
     name: "Starter",
-    monthlyPrice: 29,
+    monthlyPrice: 999,
     description: "For traders getting started with automation",
     features: [
       "2 active strategies",
@@ -24,7 +24,7 @@ const tiers = [
   },
   {
     name: "Pro",
-    monthlyPrice: 79,
+    monthlyPrice: 1499,
     description: "For serious traders who need more power",
     features: [
       "10 active strategies",
@@ -69,11 +69,10 @@ export function PricingCards({ annual }: PricingCardsProps) {
         return (
           <div
             key={tier.name}
-            className={`relative rounded-xl border p-6 ${
-              tier.highlighted
+            className={`relative rounded-xl border p-6 ${tier.highlighted
                 ? "border-brand-indigo/40 bg-brand-indigo/10 shadow-lg shadow-brand-indigo/5"
                 : "border-brand-indigo/10 bg-brand-indigo/5"
-            }`}
+              }`}
           >
             {tier.highlighted && (
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-brand-indigo to-brand-purple px-3 py-0.5 text-xs font-semibold text-white">
@@ -86,7 +85,7 @@ export function PricingCards({ annual }: PricingCardsProps) {
               {price !== null ? (
                 <div className="flex items-baseline gap-1">
                   <span className="text-3xl font-extrabold text-slate-heading">
-                    ${price}
+                    ₹{price}
                   </span>
                   <span className="text-sm text-slate-muted">/month</span>
                 </div>

@@ -64,8 +64,8 @@ function StepVisual({ type }: { type: string }) {
         <span className="text-green-400 font-semibold">● LIVE</span>
       </div>
       <div className="flex justify-between mt-2">
-        <span className="text-slate-muted">Entry: $67,420</span>
-        <span className="text-green-400">P&L: +$1,240</span>
+        <span className="text-slate-muted">Entry: ₹67,420</span>
+        <span className="text-green-400">P&L: +₹1,240</span>
       </div>
     </div>
   );
