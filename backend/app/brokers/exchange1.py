@@ -36,6 +36,7 @@ logger = structlog.get_logger(__name__)
 BASE_URL = "https://www.exchange1.global"
 BINANCE_URL = "https://api.binance.com"
 QUOTE_ASSETS: set[str] = {"USDT", "USDC"}
+_BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 _STATUS_MAP: dict[str, str] = {
     "new": "open",
@@ -149,7 +150,9 @@ class Exchange1Broker(BrokerAdapter):
         self._private_key_obj = serialization.load_pem_private_key(
             self._private_key.encode(), password=None
         )
-        self._client = httpx.AsyncClient(timeout=10.0)
+        self._client = httpx.AsyncClient(
+            timeout=10.0, headers={"User-Agent": _BROWSER_UA},
+        )
         try:
             await self._post("/openapi/v1/token", body={}, signed=True)
         except RuntimeError as exc:
@@ -241,14 +244,34 @@ class Exchange1Broker(BrokerAdapter):
         )
 
     async def _get_balance_data(self) -> list[dict]:
-        """Fetch account balances with a 2-second TTL cache."""
+        """Fetch account balances with a 2-second TTL cache.
+
+        The API returns nested data: data.accounts[].currencies[].balance.
+        We flatten the *spot* account's currencies into a simple list of
+        ``{currency, available, hold, total}`` dicts for downstream use.
+        """
         now = time.time()
         if self._account_cache and (now - self._account_cache[0]) < 2.0:
             return self._account_cache[1]
         data = await self._get("/openapi/v1/balance", signed=True)
-        accounts = data.get("data", [])
-        self._account_cache = (now, accounts)
-        return accounts
+
+        flat: list[dict] = []
+        for acct in data.get("data", {}).get("accounts", []):
+            biz_name = acct.get("biz", {}).get("name", "")
+            if biz_name != "spot":
+                continue
+            for cur in acct.get("currencies", []):
+                bal = cur.get("balance", {})
+                flat.append({
+                    "currency": cur.get("displayCode") or cur.get("name", ""),
+                    "available": bal.get("available", 0),
+                    "hold": bal.get("hold", 0),
+                    "total": bal.get("total", 0),
+                })
+            break  # only need the spot account
+
+        self._account_cache = (now, flat)
+        return flat
 
     async def get_balance(self) -> AccountBalance:
         """Return USDT balance from Exchange1 account."""
@@ -345,7 +368,9 @@ class Exchange1Broker(BrokerAdapter):
         public REST API which requires no authentication.
         """
         if self._binance_client is None:
-            self._binance_client = httpx.AsyncClient(timeout=10.0)
+            self._binance_client = httpx.AsyncClient(
+                timeout=10.0, headers={"User-Agent": _BROWSER_UA},
+            )
 
         all_candles: list[OHLCV] = []
         start_ms = int(start.timestamp() * 1000)
