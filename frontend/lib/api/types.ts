@@ -287,3 +287,19 @@ export interface StopAllResponse {
   deployments: Deployment[];
   orders_cancelled: number;
 }
+
+// Market Data
+export interface OhlcvCandle {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface TradeMarker {
+  time: string;
+  price: number;
+  action: "BUY" | "SELL";
+}
