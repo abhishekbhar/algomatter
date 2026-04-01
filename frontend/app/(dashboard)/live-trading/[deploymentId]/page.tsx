@@ -1,9 +1,10 @@
 "use client";
 import {
   Box, Heading, HStack, Grid, GridItem, Tabs, TabList, Tab, TabPanels, TabPanel, Button, useDisclosure,
+  Skeleton, Flex, ButtonGroup, Text, useColorModeValue,
 } from "@chakra-ui/react";
 import { useParams } from "next/navigation";
-import { useDeployment, useDeploymentPosition, useDeploymentMetrics, useDeploymentComparison } from "@/lib/hooks/useApi";
+import { useDeployment, useDeploymentPosition, useDeploymentMetrics, useDeploymentComparison, useOhlcv, useDeploymentTrades } from "@/lib/hooks/useApi";
 import { DeploymentBadge } from "@/components/shared/DeploymentBadge";
 import { LogViewer } from "@/components/shared/LogViewer";
 import { PositionCard } from "@/components/live-trading/PositionCard";
@@ -13,6 +14,9 @@ import { ManualOrderModal } from "@/components/live-trading/ManualOrderModal";
 import { MetricsGrid } from "@/components/live-trading/MetricsGrid";
 import { ComparisonTable } from "@/components/live-trading/ComparisonTable";
 import { apiClient } from "@/lib/api/client";
+import { useState } from "react";
+import { CandlestickChart } from "@/components/charts/CandlestickChart";
+import type { TradeMarker } from "@/lib/api/types";
 
 export default function DeploymentDetailPage() {
   const { deploymentId } = useParams<{ deploymentId: string }>();
@@ -21,6 +25,32 @@ export default function DeploymentDetailPage() {
   const { data: metrics } = useDeploymentMetrics(deploymentId);
   const { data: comparison } = useDeploymentComparison(deploymentId);
   const orderModal = useDisclosure();
+  const chartBg = useColorModeValue("white", "gray.800");
+  const [selectedInterval, setSelectedInterval] = useState<string | null>(null);
+  const [timeframe, setTimeframe] = useState<"1W" | "1M" | "3M" | "ALL">("1M");
+  const interval = selectedInterval ?? deployment?.interval ?? "1h";
+  const isLive = deployment?.status === "running" || deployment?.status === "paused";
+  const { data: ohlcv, isLoading: ohlcvLoading } = useOhlcv(
+    deployment?.symbol,
+    interval,
+    deployment?.exchange,
+    timeframe,
+    isLive,
+  );
+  const { data: tradesData } = useDeploymentTrades(deploymentId, 0, 500);
+
+  const tradeMarkers: TradeMarker[] = (tradesData?.trades ?? [])
+    .filter((t) => t.fill_price != null)
+    .map((t) => {
+      const action = t.action.toUpperCase();
+      if (action !== "BUY" && action !== "SELL") return null;
+      return {
+        time: t.filled_at ?? t.created_at,
+        price: t.fill_price!,
+        action: action as "BUY" | "SELL",
+      };
+    })
+    .filter((m): m is TradeMarker => m !== null);
 
   if (!deployment) return <Box p={6}>Loading...</Box>;
 
@@ -59,6 +89,52 @@ export default function DeploymentDetailPage() {
           {canStop && <Button size="sm" colorScheme="orange" onClick={() => handleAction("stop")}>Stop</Button>}
         </HStack>
       </HStack>
+
+      {/* Market Chart */}
+      <Box bg={chartBg} p={4} borderRadius="lg" shadow="sm" mb={6}>
+        <Flex justify="space-between" mb={2}>
+          <ButtonGroup size="xs" variant="outline">
+            {(() => {
+              const standard = ["1m", "5m", "15m", "1h", "1d"];
+              const deploymentInterval = deployment.interval;
+              const intervals = standard.includes(deploymentInterval)
+                ? standard
+                : [deploymentInterval, ...standard];
+              return intervals.map((iv) => (
+                <Button
+                  key={iv}
+                  onClick={() => setSelectedInterval(iv)}
+                  variant={interval === iv ? "solid" : "outline"}
+                  colorScheme={interval === iv ? "blue" : "gray"}
+                >
+                  {iv}
+                </Button>
+              ));
+            })()}
+          </ButtonGroup>
+          <ButtonGroup size="xs" variant="outline">
+            {(["1W", "1M", "3M", "ALL"] as const).map((tf) => (
+              <Button
+                key={tf}
+                onClick={() => setTimeframe(tf)}
+                variant={timeframe === tf ? "solid" : "outline"}
+                colorScheme={timeframe === tf ? "blue" : "gray"}
+              >
+                {tf}
+              </Button>
+            ))}
+          </ButtonGroup>
+        </Flex>
+        {ohlcvLoading ? (
+          <Skeleton height="400px" borderRadius="lg" />
+        ) : !ohlcv || ohlcv.length === 0 ? (
+          <Flex h="400px" align="center" justify="center">
+            <Text color="gray.500">No market data available for {deployment.symbol}</Text>
+          </Flex>
+        ) : (
+          <CandlestickChart data={ohlcv} trades={tradeMarkers} height={400} />
+        )}
+      </Box>
 
       <Grid templateColumns={{ base: "1fr", md: "1fr 1fr" }} gap={6}>
         <GridItem>
