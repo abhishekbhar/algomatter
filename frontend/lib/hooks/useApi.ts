@@ -28,6 +28,7 @@ import type {
   PositionInfo,
   LiveMetrics,
   ComparisonData,
+  OhlcvCandle,
 } from "@/lib/api/types";
 
 function fetcher<T>(path: string): Promise<T> {
@@ -123,6 +124,26 @@ export function useStrategyTrades(strategyId: string | null) {
   return useApiGet<AnalyticsTrade[]>(
     strategyId ? `/api/v1/analytics/strategies/${strategyId}/trades` : null,
   );
+}
+
+// Market Data
+export function useOhlcv(
+  symbol: string | undefined,
+  interval: string | undefined,
+  exchange: string | undefined,
+  timeframe: "1W" | "1M" | "3M" | "ALL",
+  isLive: boolean,
+) {
+  const days = { "1W": 7, "1M": 30, "3M": 90, ALL: 365 }[timeframe];
+  const end = new Date().toISOString().split("T")[0];
+  const start = new Date(Date.now() - days * 86_400_000).toISOString().split("T")[0];
+  const path =
+    symbol && interval && exchange
+      ? `/api/v1/historical/ohlcv?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&exchange=${encodeURIComponent(exchange)}&start=${start}&end=${end}&limit=10000`
+      : null;
+  return useApiGet<OhlcvCandle[]>(path, {
+    refreshInterval: isLive ? POLLING_INTERVALS.MARKET_CHART : 0,
+  });
 }
 
 // Hosted Strategies
