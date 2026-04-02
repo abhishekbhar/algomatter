@@ -224,24 +224,66 @@ async def list_signals(
     session: AsyncSession = Depends(get_tenant_session),
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
+
+    # Fetch strategies for name lookup
+    strat_result = await session.execute(
+        select(Strategy).where(Strategy.tenant_id == tenant_id)
+    )
+    strat_map = {s.id: s.name for s in strat_result.scalars().all()}
+
     result = await session.execute(
         select(WebhookSignal)
         .where(WebhookSignal.tenant_id == tenant_id)
         .order_by(WebhookSignal.received_at.desc())
     )
     signals = result.scalars().all()
-    return [
-        {
-            "id": str(s.id),
-            "strategy_id": str(s.strategy_id) if s.strategy_id else None,
-            "received_at": s.received_at.isoformat() if s.received_at else None,
-            "raw_payload": s.raw_payload,
-            "parsed_signal": s.parsed_signal,
-            "status": s.rule_result,
-            "error_message": s.rule_detail,
-            "execution_result": s.execution_result,
-            "execution_detail": s.execution_detail,
-            "processing_ms": s.processing_ms,
-        }
-        for s in signals
-    ]
+    return [_signal_to_dict(s, strat_map) for s in signals]
+
+
+@webhook_config_router.get("/signals/strategy/{strategy_id}")
+async def list_strategy_signals(
+    strategy_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+
+    # Verify strategy belongs to user
+    strat_result = await session.execute(
+        select(Strategy).where(
+            Strategy.id == strategy_id,
+            Strategy.tenant_id == tenant_id,
+        )
+    )
+    strategy = strat_result.scalar_one_or_none()
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
+    strat_map = {strategy.id: strategy.name}
+
+    result = await session.execute(
+        select(WebhookSignal)
+        .where(
+            WebhookSignal.tenant_id == tenant_id,
+            WebhookSignal.strategy_id == strategy_id,
+        )
+        .order_by(WebhookSignal.received_at.desc())
+    )
+    signals = result.scalars().all()
+    return [_signal_to_dict(s, strat_map) for s in signals]
+
+
+def _signal_to_dict(s: WebhookSignal, strat_map: dict) -> dict:
+    return {
+        "id": str(s.id),
+        "strategy_id": str(s.strategy_id) if s.strategy_id else None,
+        "strategy_name": strat_map.get(s.strategy_id, "Unknown"),
+        "received_at": s.received_at.isoformat() if s.received_at else None,
+        "raw_payload": s.raw_payload,
+        "parsed_signal": s.parsed_signal,
+        "status": s.rule_result,
+        "error_message": s.rule_detail,
+        "execution_result": s.execution_result,
+        "execution_detail": s.execution_detail,
+        "processing_ms": s.processing_ms,
+    }

@@ -33,10 +33,23 @@ export interface WebhookConfig {
 export interface WebhookSignal {
   id: string;
   strategy_id: string;
+  strategy_name?: string;
   raw_payload: Record<string, unknown>;
   parsed_signal: Record<string, unknown> | null;
   status: string;
   error_message: string | null;
+  execution_result: string | null;
+  execution_detail: {
+    order_id?: string;
+    broker_order_id?: string;
+    status?: string;
+    fill_price?: string;
+    fill_quantity?: string;
+    message?: string;
+    placed_at?: string;
+    error?: string;
+  } | null;
+  processing_ms: number | null;
   received_at: string;
 }
 

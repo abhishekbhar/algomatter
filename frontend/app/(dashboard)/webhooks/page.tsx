@@ -1,7 +1,7 @@
 "use client";
 import {
   Box, Heading, Flex, Code, IconButton, Button, useDisclosure, useToast, useClipboard,
-  Card, CardHeader, CardBody, Text, VStack, HStack,
+  Card, CardHeader, CardBody, Text, VStack, HStack, Badge,
 } from "@chakra-ui/react";
 import { useState } from "react";
 import { DataTable, Column } from "@/components/shared/DataTable";
@@ -56,18 +56,57 @@ export default function WebhooksPage() {
       key: "received_at", header: "Time", sortable: true,
       render: (v) => formatDate(String(v ?? "")),
     },
-    { key: "strategy_id", header: "Strategy" },
     {
-      key: "status", header: "Status",
+      key: "strategy_name", header: "Strategy",
+      render: (_v, row) => row.strategy_name ?? row.strategy_id?.slice(0, 8) ?? "—",
+    },
+    {
+      key: "parsed_signal", header: "Action",
+      render: (v) => {
+        const sig = v as Record<string, unknown> | null;
+        if (!sig?.action) return "—";
+        const action = String(sig.action).toUpperCase();
+        return (
+          <Badge colorScheme={action === "BUY" ? "green" : action === "SELL" ? "red" : "gray"} size="sm">
+            {action}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: "status", header: "Rule",
       render: (v) => {
         const status = String(v ?? "");
-        const variant = status === "passed" ? "success" : status === "blocked" ? "error" : "warning";
+        const variant = status === "passed" ? "success" : status === "blocked_by_rule" ? "error" : "warning";
         return <StatusBadge variant={variant} text={status} />;
       },
     },
     {
-      key: "error_message", header: "Error",
-      render: (v) => v ? String(v) : "\u2014",
+      key: "execution_result", header: "Execution",
+      render: (v) => {
+        if (!v) return "—";
+        const r = String(v);
+        const variant = r === "filled" ? "success" : r === "broker_error" ? "error" : "warning";
+        return <StatusBadge variant={variant} text={r} />;
+      },
+    },
+    {
+      key: "execution_detail", header: "Fill Price",
+      render: (v) => {
+        const detail = v as WebhookSignal["execution_detail"];
+        if (!detail?.fill_price) return "—";
+        return Number(detail.fill_price).toFixed(2);
+      },
+    },
+    {
+      key: "error_message", header: "Detail",
+      render: (_v, row) => {
+        if (row.error_message) return row.error_message;
+        const detail = row.execution_detail;
+        if (detail?.error) return detail.error;
+        if (detail?.order_id) return `Order: ${detail.order_id}`;
+        return "—";
+      },
     },
   ];
 

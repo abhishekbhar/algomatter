@@ -77,6 +77,13 @@ export function useWebhookSignals() {
   });
 }
 
+export function useStrategySignals(strategyId: string | null) {
+  return useApiGet<WebhookSignal[]>(
+    strategyId ? `/api/v1/webhooks/signals/strategy/${strategyId}` : null,
+    { refreshInterval: POLLING_INTERVALS.SIGNALS },
+  );
+}
+
 export function useBrokers() {
   return useApiGet<BrokerConnection[]>("/api/v1/brokers");
 }

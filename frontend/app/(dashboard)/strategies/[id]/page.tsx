@@ -8,9 +8,10 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { ChartContainer } from "@/components/charts/ChartContainer";
 import { EquityCurve } from "@/components/charts/EquityCurve";
+import { WebhookTradesTable } from "@/components/strategies/WebhookTradesTable";
 import {
   useStrategy,
-  useWebhookSignals,
+  useStrategySignals,
   usePaperSessions,
   useStrategyMetrics,
   useStrategyEquityCurve,
@@ -19,14 +20,45 @@ import { formatDate } from "@/lib/utils/formatters";
 import type { WebhookSignal, PaperSession, EquityCurvePoint } from "@/lib/api/types";
 
 const signalColumns: Column<WebhookSignal>[] = [
-  { key: "status", header: "Status", sortable: true,
+  { key: "received_at", header: "Time", sortable: true, render: (v) => v ? formatDate(String(v)) : "" },
+  {
+    key: "parsed_signal", header: "Action",
+    render: (v) => {
+      const sig = v as Record<string, unknown> | null;
+      if (!sig?.action) return "—";
+      const action = String(sig.action).toUpperCase();
+      return (
+        <Badge colorScheme={action === "BUY" ? "green" : action === "SELL" ? "red" : "gray"} size="sm">
+          {action}
+        </Badge>
+      );
+    },
+  },
+  {
+    key: "status", header: "Rule",
     render: (v) => {
       const status = String(v ?? "");
-      const variant = status === "passed" ? "success" : status === "blocked" ? "error" : "warning";
+      const variant = status === "passed" ? "success" : status === "blocked_by_rule" ? "error" : "warning";
       return <StatusBadge variant={variant} text={status} />;
     },
   },
-  { key: "received_at", header: "Time", sortable: true, render: (v) => v ? formatDate(String(v)) : "" },
+  {
+    key: "execution_result", header: "Execution",
+    render: (v) => {
+      if (!v) return "—";
+      const r = String(v);
+      const variant = r === "filled" ? "success" : r === "broker_error" ? "error" : "warning";
+      return <StatusBadge variant={variant} text={r} />;
+    },
+  },
+  {
+    key: "execution_detail", header: "Fill Price",
+    render: (v) => {
+      const detail = v as WebhookSignal["execution_detail"];
+      if (!detail?.fill_price) return "—";
+      return Number(detail.fill_price).toFixed(2);
+    },
+  },
 ];
 
 const sessionColumns: Column<PaperSession>[] = [
@@ -49,12 +81,11 @@ export default function StrategyDetailPage() {
   const cardBg = useColorModeValue("white", "gray.800");
 
   const { data: strategy, isLoading } = useStrategy(id);
-  const { data: signals } = useWebhookSignals();
+  const { data: signals } = useStrategySignals(id);
   const { data: sessions } = usePaperSessions();
   const { data: metrics } = useStrategyMetrics(id);
   const { data: equityData } = useStrategyEquityCurve(id);
 
-  const strategySignals = (signals ?? []).filter((s) => s.strategy_id === id);
   const strategySessions = (sessions ?? []).filter((s) => s.strategy_id === id);
 
   if (isLoading) {
@@ -120,6 +151,7 @@ export default function StrategyDetailPage() {
       <Tabs variant="enclosed">
         <TabList>
           <Tab>Signals</Tab>
+          <Tab>Trades</Tab>
           <Tab>Paper Trading</Tab>
           <Tab>Analytics</Tab>
         </TabList>
@@ -127,9 +159,12 @@ export default function StrategyDetailPage() {
           <TabPanel px={0}>
             <DataTable<WebhookSignal>
               columns={signalColumns}
-              data={strategySignals}
+              data={signals ?? []}
               emptyMessage="No signals for this strategy"
             />
+          </TabPanel>
+          <TabPanel px={0}>
+            <WebhookTradesTable strategyId={id} />
           </TabPanel>
           <TabPanel px={0}>
             <DataTable<PaperSession>
