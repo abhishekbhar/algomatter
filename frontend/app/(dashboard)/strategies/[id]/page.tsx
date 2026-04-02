@@ -6,7 +6,7 @@ import {
 import { useRouter, useParams } from "next/navigation";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { DataTable, Column } from "@/components/shared/DataTable";
-import { ChartContainer } from "@/components/charts/ChartContainer";
+import { ChartContainer, filterByTimeframe } from "@/components/charts/ChartContainer";
 import { EquityCurve } from "@/components/charts/EquityCurve";
 import { WebhookTradesTable } from "@/components/strategies/WebhookTradesTable";
 import {
@@ -176,7 +176,7 @@ export default function StrategyDetailPage() {
           <TabPanel px={0}>
             {chartData.length > 0 ? (
               <ChartContainer height={300}>
-                {() => <EquityCurve data={chartData} height={300} />}
+                {(tf) => <EquityCurve data={filterByTimeframe(chartData, tf)} height={300} />}
               </ChartContainer>
             ) : (
               <Text color="gray.500" textAlign="center" py={8}>

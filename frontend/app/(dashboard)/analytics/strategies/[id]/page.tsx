@@ -7,7 +7,7 @@ import { StatCard } from "@/components/shared/StatCard";
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { EquityCurve } from "@/components/charts/EquityCurve";
 import { DrawdownChart } from "@/components/charts/DrawdownChart";
-import { ChartContainer } from "@/components/charts/ChartContainer";
+import { ChartContainer, filterByTimeframe } from "@/components/charts/ChartContainer";
 import {
   useStrategy,
   useStrategyMetrics,
@@ -148,7 +148,7 @@ export default function StrategyDrilldownPage() {
             Equity Curve
           </Heading>
           <ChartContainer height={300} isLoading={equityLoading}>
-            {() => <EquityCurve data={chartData} height={300} />}
+            {(tf) => <EquityCurve data={filterByTimeframe(chartData, tf)} height={300} />}
           </ChartContainer>
         </Box>
 
@@ -157,7 +157,7 @@ export default function StrategyDrilldownPage() {
             Drawdown
           </Heading>
           <ChartContainer height={300} isLoading={equityLoading}>
-            {() => <DrawdownChart data={drawdownData} height={300} />}
+            {(tf) => <DrawdownChart data={filterByTimeframe(drawdownData, tf)} height={300} />}
           </ChartContainer>
         </Box>
       </SimpleGrid>

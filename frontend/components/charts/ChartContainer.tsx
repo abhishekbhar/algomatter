@@ -4,6 +4,14 @@ import { useState } from "react";
 
 export type Timeframe = "1W" | "1M" | "3M" | "ALL";
 
+const TIMEFRAME_DAYS: Record<Timeframe, number> = { "1W": 7, "1M": 30, "3M": 90, ALL: Infinity };
+
+export function filterByTimeframe<T extends { time: string }>(data: T[], timeframe: Timeframe): T[] {
+  if (timeframe === "ALL") return data;
+  const cutoff = new Date(Date.now() - TIMEFRAME_DAYS[timeframe] * 86_400_000).toISOString().split("T")[0];
+  return data.filter((d) => d.time >= cutoff);
+}
+
 interface ChartContainerProps {
   children: (timeframe: Timeframe) => React.ReactNode;
   isLoading?: boolean;

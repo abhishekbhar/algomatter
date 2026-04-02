@@ -7,7 +7,7 @@ import { StatCard } from "@/components/shared/StatCard";
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { EquityCurve } from "@/components/charts/EquityCurve";
-import { ChartContainer } from "@/components/charts/ChartContainer";
+import { ChartContainer, filterByTimeframe } from "@/components/charts/ChartContainer";
 import {
   useAnalyticsOverview,
   useWebhookSignals,
@@ -98,7 +98,7 @@ export default function DashboardPage() {
       <Box bg={cardBg} p={4} borderRadius="lg" shadow="sm" mb={6}>
         <Heading size="sm" mb={2}>Equity Curve</Heading>
         <ChartContainer height={300} isLoading={overviewLoading}>
-          {() => <EquityCurve data={equityPlaceholder} height={300} />}
+          {(tf) => <EquityCurve data={filterByTimeframe(equityPlaceholder, tf)} height={300} />}
         </ChartContainer>
       </Box>
 

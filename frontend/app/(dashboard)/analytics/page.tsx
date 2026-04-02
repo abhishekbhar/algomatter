@@ -7,7 +7,7 @@ import { StatCard } from "@/components/shared/StatCard";
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { EquityCurve } from "@/components/charts/EquityCurve";
-import { ChartContainer } from "@/components/charts/ChartContainer";
+import { ChartContainer, filterByTimeframe } from "@/components/charts/ChartContainer";
 import { useAnalyticsOverview, useStrategies } from "@/lib/hooks/useApi";
 import { formatCurrency } from "@/lib/utils/formatters";
 import type { Strategy } from "@/lib/api/types";
@@ -68,7 +68,7 @@ export default function AnalyticsPage() {
           Portfolio Equity Curve
         </Heading>
         <ChartContainer height={300} isLoading={overviewLoading}>
-          {() => <EquityCurve data={[]} height={300} />}
+          {(tf) => <EquityCurve data={filterByTimeframe([], tf)} height={300} />}
         </ChartContainer>
       </Box>
 
