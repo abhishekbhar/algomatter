@@ -7,11 +7,12 @@ const PAGE_SIZE = 20;
 
 interface Props {
   deploymentId: string;
+  refreshInterval?: number;
 }
 
-export function TradeHistoryTable({ deploymentId }: Props) {
+export function TradeHistoryTable({ deploymentId, refreshInterval = 5000 }: Props) {
   const [offset, setOffset] = useState(0);
-  const { data } = useDeploymentTrades(deploymentId, offset, PAGE_SIZE);
+  const { data } = useDeploymentTrades(deploymentId, offset, PAGE_SIZE, { refreshInterval });
 
   return (
     <Box>
