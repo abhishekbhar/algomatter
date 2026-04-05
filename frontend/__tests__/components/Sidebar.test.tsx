@@ -14,7 +14,8 @@ describe("Sidebar", () => {
   it("renders all nav items", () => {
     wrap(<Sidebar />);
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
-    expect(screen.getByText("Strategies")).toBeInTheDocument();
+    expect(screen.getByText("Webhook Strategies")).toBeInTheDocument();
+    expect(screen.getByText("Hosted Strategies")).toBeInTheDocument();
     expect(screen.getByText("Webhooks")).toBeInTheDocument();
     expect(screen.getByText("Brokers")).toBeInTheDocument();
     expect(screen.getByText("Paper Trading")).toBeInTheDocument();
