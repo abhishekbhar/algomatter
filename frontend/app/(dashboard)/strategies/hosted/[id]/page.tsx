@@ -9,6 +9,7 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import MonacoEditor from "@/components/editor/MonacoEditor";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { SymbolSelect } from "@/components/shared/SymbolSelect";
 import { useHostedStrategy, useStrategyVersions, useDeployments } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import type { Deployment } from "@/lib/api/types";
@@ -32,8 +33,14 @@ export default function StrategyEditorPage() {
   const { isOpen: isDeployOpen, onOpen: onDeployOpen, onClose: onDeployClose } = useDisclosure();
   const [deployMode, setDeployMode] = useState<string>("backtest");
   const [deploySymbol, setDeploySymbol] = useState("BTCUSDT");
-  const [deployExchange, setDeployExchange] = useState("BINANCE");
+  const [deployExchange, setDeployExchange] = useState("EXCHANGE1");
   const [deployInterval, setDeployInterval] = useState("5m");
+
+  // Reset symbol when exchange changes
+  const handleExchangeChange = (exchange: string) => {
+    setDeployExchange(exchange);
+    setDeploySymbol("");
+  };
   const [deployStartDate, setDeployStartDate] = useState("2025-01-01");
   const [deployEndDate, setDeployEndDate] = useState("2025-06-01");
   const [deployCapital, setDeployCapital] = useState(10000);
@@ -259,15 +266,19 @@ export default function StrategyEditorPage() {
                 </Select>
               </FormControl>
               <FormControl>
-                <FormLabel>Symbol</FormLabel>
-                <Input value={deploySymbol} onChange={(e) => setDeploySymbol(e.target.value)} />
+                <FormLabel>Exchange</FormLabel>
+                <Select value={deployExchange} onChange={(e) => handleExchangeChange(e.target.value)}>
+                  <option value="EXCHANGE1">Exchange1</option>
+                  <option value="BINANCE">Binance</option>
+                </Select>
               </FormControl>
               <FormControl>
-                <FormLabel>Exchange</FormLabel>
-                <Select value={deployExchange} onChange={(e) => setDeployExchange(e.target.value)}>
-                  <option value="BINANCE">Binance</option>
-                  <option value="EXCHANGE1">Exchange1</option>
-                </Select>
+                <FormLabel>Symbol</FormLabel>
+                <SymbolSelect
+                  exchange={deployExchange}
+                  value={deploySymbol}
+                  onChange={setDeploySymbol}
+                />
               </FormControl>
               <FormControl>
                 <FormLabel>Interval</FormLabel>

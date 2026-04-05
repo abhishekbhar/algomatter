@@ -378,6 +378,19 @@ class DeploymentLog(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class ExchangeInstrument(Base):
+    __tablename__ = "exchange_instruments"
+    __table_args__ = (UniqueConstraint("exchange", "symbol", "product_type"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    exchange: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    base_asset: Mapped[str] = mapped_column(String(20), nullable=False)
+    quote_asset: Mapped[str] = mapped_column(String(20), nullable=False)
+    product_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class DeploymentTrade(Base):
     __tablename__ = "deployment_trades"
 

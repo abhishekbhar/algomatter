@@ -39,10 +39,12 @@ export function BacktestOverviewTab({ result, deploymentStatus }: Props) {
   }
 
   const m = result.metrics;
-  const equityCurveData = (result.equity_curve ?? []).map((p) => ({
-    time: p.timestamp,
-    value: p.equity,
-  }));
+  const equityCurveData = (result.equity_curve ?? [])
+    .filter((p) => p.timestamp != null)
+    .map((p) => ({
+      time: Math.floor(new Date(p.timestamp!).getTime() / 1000),
+      value: p.equity,
+    }));
 
   return (
     <Box>

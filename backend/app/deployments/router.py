@@ -771,6 +771,46 @@ async def get_deployment_trades(
     trades = result.scalars().all()
 
     strategy_name = dep.strategy_code.name if dep.strategy_code else ""
+
+    # For backtest deployments, serve trades from StrategyResult.trade_log
+    if dep.mode == "backtest":
+        sr = await session.scalar(
+            select(StrategyResult)
+            .where(StrategyResult.deployment_id == deployment_id)
+            .order_by(StrategyResult.created_at.desc())
+        )
+        trade_log: list[dict] = (sr.trade_log or []) if sr else []
+        total_bt = len(trade_log)
+        page = trade_log[offset: offset + limit]
+        return TradesResponse(
+            trades=[
+                DeploymentTradeResponse(
+                    id=f"bt-{offset + i}",
+                    deployment_id=str(deployment_id),
+                    order_id=f"bt-{offset + i}",
+                    broker_order_id=None,
+                    action="BUY" if t.get("side") == "long" else "SELL",
+                    quantity=float(t.get("quantity", 0)),
+                    order_type="market",
+                    price=None,
+                    trigger_price=None,
+                    fill_price=t.get("entry_price"),
+                    fill_quantity=t.get("quantity"),
+                    status="win" if (t.get("pnl") or 0) >= 0 else "loss",
+                    is_manual=False,
+                    realized_pnl=t.get("pnl"),
+                    created_at=t.get("entry_time", ""),
+                    filled_at=t.get("exit_time"),
+                    strategy_name=strategy_name,
+                    symbol=dep.symbol,
+                )
+                for i, t in enumerate(page)
+            ],
+            total=total_bt,
+            offset=offset,
+            limit=limit,
+        )
+
     return TradesResponse(
         trades=[_trade_to_response(t, strategy_name, dep.symbol) for t in trades],
         total=total, offset=offset, limit=limit,
@@ -830,7 +870,7 @@ async def get_deployment_position(
 
 @router.get(
     "/api/v1/deployments/{deployment_id}/results",
-    response_model=list[DeploymentResultResponse],
+    response_model=DeploymentResultResponse | None,
 )
 async def get_deployment_results(
     deployment_id: uuid.UUID,
@@ -853,22 +893,21 @@ async def get_deployment_results(
         select(StrategyResult).where(
             StrategyResult.deployment_id == deployment_id,
             StrategyResult.tenant_id == tenant_id,
-        )
+        ).order_by(StrategyResult.created_at.desc()).limit(1)
     )
-    results = result.scalars().all()
-    return [
-        DeploymentResultResponse(
-            id=str(r.id),
-            deployment_id=str(r.deployment_id),
-            trade_log=r.trade_log if isinstance(r.trade_log, list) else None,
-            equity_curve=r.equity_curve if isinstance(r.equity_curve, list) else None,
-            metrics=r.metrics if isinstance(r.metrics, dict) else None,
-            status=r.status,
-            created_at=r.created_at.isoformat() if r.created_at else "",
-            completed_at=r.completed_at.isoformat() if r.completed_at else None,
-        )
-        for r in results
-    ]
+    r = result.scalar_one_or_none()
+    if not r:
+        return None
+    return DeploymentResultResponse(
+        id=str(r.id),
+        deployment_id=str(r.deployment_id),
+        trade_log=r.trade_log if isinstance(r.trade_log, list) else None,
+        equity_curve=r.equity_curve if isinstance(r.equity_curve, list) else None,
+        metrics=r.metrics if isinstance(r.metrics, dict) else None,
+        status=r.status,
+        created_at=r.created_at.isoformat() if r.created_at else "",
+        completed_at=r.completed_at.isoformat() if r.completed_at else None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -916,14 +955,37 @@ async def get_deployment_logs(
     tenant_id = uuid.UUID(current_user["user_id"])
 
     # Verify deployment ownership
-    result = await session.execute(
+    dep_result = await session.execute(
         select(StrategyDeployment).where(
             StrategyDeployment.id == deployment_id,
             StrategyDeployment.tenant_id == tenant_id,
         )
     )
-    if not result.scalar_one_or_none():
+    dep = dep_result.scalar_one_or_none()
+    if not dep:
         raise HTTPException(status_code=404, detail="Deployment not found")
+
+    # For backtest deployments, build synthetic logs from StrategyResult
+    if dep.mode == "backtest":
+        sr = await session.scalar(
+            select(StrategyResult)
+            .where(StrategyResult.deployment_id == deployment_id)
+            .order_by(StrategyResult.created_at.desc())
+        )
+        synth: list[DeploymentLogEntry] = []
+        if sr:
+            m = sr.metrics or {}
+            ts_start = sr.created_at.isoformat() if sr.created_at else ""
+            ts_done = (sr.completed_at.isoformat() if sr.completed_at else ts_start)
+            synth = [
+                DeploymentLogEntry(id="bt-log-0", timestamp=ts_start, level="info",
+                                   message=f"Backtest started for {dep.symbol} on {dep.exchange} ({dep.interval})"),
+                DeploymentLogEntry(id="bt-log-1", timestamp=ts_done, level="info",
+                                   message=f"Backtest completed — {int(m.get('total_trades', 0))} trades executed"),
+                DeploymentLogEntry(id="bt-log-2", timestamp=ts_done, level="info",
+                                   message=f"Return: {m.get('total_return', 0):.2f}%  Win rate: {m.get('win_rate', 0):.1f}%  Sharpe: {m.get('sharpe_ratio', 0):.2f}  Max DD: {m.get('max_drawdown', 0):.2f}%"),
+            ]
+        return DeploymentLogsResponse(logs=synth[offset: offset + limit], total=len(synth), offset=offset, limit=limit)
 
     # Get total count
     total = await session.scalar(

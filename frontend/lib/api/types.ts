@@ -301,6 +301,15 @@ export interface StopAllResponse {
   orders_cancelled: number;
 }
 
+// Instruments
+export interface ExchangeInstrument {
+  symbol: string;
+  base_asset: string;
+  quote_asset: string;
+  product_type: string;
+  exchange: string;
+}
+
 // Market Data
 export interface OhlcvCandle {
   timestamp: string;

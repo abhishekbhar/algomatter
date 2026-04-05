@@ -3,7 +3,7 @@ import { useRef, useEffect } from "react";
 import { createChart, AreaSeries, IChartApi, AreaData, Time } from "lightweight-charts";
 import { useColorModeValue } from "@chakra-ui/react";
 
-interface EquityCurveProps { data: Array<{ time: string; value: number }>; height?: number; }
+interface EquityCurveProps { data: Array<{ time: string | number; value: number }>; height?: number; }
 
 export function EquityCurve({ data, height = 300 }: EquityCurveProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -25,7 +25,10 @@ export function EquityCurve({ data, height = 300 }: EquityCurveProps) {
       lineColor: "#3182ce", topColor: "rgba(49, 130, 206, 0.4)",
       bottomColor: "rgba(49, 130, 206, 0.0)", lineWidth: 2,
     });
-    const sorted = [...data].sort((a, b) => a.time.localeCompare(b.time));
+    const sorted = [...data].sort((a, b) => {
+      if (typeof a.time === "number" && typeof b.time === "number") return a.time - b.time;
+      return String(a.time).localeCompare(String(b.time));
+    });
     series.setData(sorted as AreaData<Time>[]);
     chart.timeScale().fitContent();
     const handleResize = () => { if (containerRef.current) chart.applyOptions({ width: containerRef.current.clientWidth }); };

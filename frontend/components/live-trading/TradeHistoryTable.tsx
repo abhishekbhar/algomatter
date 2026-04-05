@@ -47,7 +47,14 @@ export function TradeHistoryTable({ deploymentId, refreshInterval = 5000 }: Prop
                 }>
                   {t.realized_pnl != null ? t.realized_pnl.toFixed(2) : "—"}
                 </Td>
-                <Td><Badge size="sm">{t.status}</Badge></Td>
+                <Td>
+                  <Badge
+                    size="sm"
+                    colorScheme={t.status === "win" ? "green" : t.status === "loss" ? "red" : t.status === "filled" ? "blue" : t.status === "failed" ? "red" : "gray"}
+                  >
+                    {t.status}
+                  </Badge>
+                </Td>
               </Tr>
             ))}
           </Tbody>

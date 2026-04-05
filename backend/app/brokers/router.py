@@ -1,15 +1,24 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import get_current_user, get_tenant_session
+from app.auth.deps import get_current_user, get_session, get_tenant_session
 from app.brokers.schemas import BrokerConnectionResponse, CreateBrokerConnectionRequest
 from app.crypto.encryption import encrypt_credentials
-from app.db.models import BrokerConnection
+from app.db.models import BrokerConnection, ExchangeInstrument
 
 router = APIRouter(prefix="/api/v1/brokers", tags=["brokers"])
+
+
+class InstrumentResponse(BaseModel):
+    symbol: str
+    base_asset: str
+    quote_asset: str
+    product_type: str
+    exchange: str
 
 
 @router.post(
@@ -86,3 +95,30 @@ async def delete_broker_connection(
     await session.delete(conn)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/instruments", response_model=list[InstrumentResponse])
+async def list_instruments(
+    exchange: str,
+    product_type: str | None = None,
+    _: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    query = select(ExchangeInstrument).where(
+        ExchangeInstrument.exchange == exchange.upper(),
+        ExchangeInstrument.is_active.is_(True),
+    )
+    if product_type:
+        query = query.where(ExchangeInstrument.product_type == product_type.upper())
+    result = await session.execute(query.order_by(ExchangeInstrument.base_asset))
+    instruments = result.scalars().all()
+    return [
+        InstrumentResponse(
+            symbol=i.symbol,
+            base_asset=i.base_asset,
+            quote_asset=i.quote_asset,
+            product_type=i.product_type,
+            exchange=i.exchange,
+        )
+        for i in instruments
+    ]

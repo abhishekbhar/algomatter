@@ -29,6 +29,7 @@ import type {
   LiveMetrics,
   ComparisonData,
   OhlcvCandle,
+  ExchangeInstrument,
 } from "@/lib/api/types";
 
 function fetcher<T>(path: string): Promise<T> {
@@ -131,6 +132,14 @@ export function useStrategyTrades(strategyId: string | null) {
   return useApiGet<AnalyticsTrade[]>(
     strategyId ? `/api/v1/analytics/strategies/${strategyId}/trades` : null,
   );
+}
+
+// Instruments
+export function useExchangeInstruments(exchange: string | null, productType?: string) {
+  const params = exchange
+    ? `exchange=${encodeURIComponent(exchange)}${productType ? `&product_type=${encodeURIComponent(productType)}` : ""}`
+    : null;
+  return useApiGet<ExchangeInstrument[]>(params ? `/api/v1/brokers/instruments?${params}` : null);
 }
 
 // Market Data
