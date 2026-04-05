@@ -5,7 +5,10 @@ import * as useApiModule from "@/lib/hooks/useApi";
 
 jest.mock("@/lib/hooks/useApi");
 jest.mock("@/components/charts/EquityCurve", () => ({ EquityCurve: () => <div data-testid="equity-curve" /> }));
-jest.mock("@/components/charts/ChartContainer", () => ({ ChartContainer: ({ children }: any) => <div>{children("1M")}</div> }));
+jest.mock("@/components/charts/ChartContainer", () => ({
+  ChartContainer: ({ children }: any) => <div>{children("1M")}</div>,
+  filterByTimeframe: (data: any[]) => data,
+}));
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push: jest.fn() }) }));
 
 describe("AnalyticsPage", () => {

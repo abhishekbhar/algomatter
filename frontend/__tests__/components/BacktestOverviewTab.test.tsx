@@ -41,7 +41,7 @@ describe("BacktestOverviewTab", () => {
   it("renders metrics when result is provided", () => {
     wrap(<BacktestOverviewTab result={result} deploymentStatus="completed" />);
     expect(screen.getByText(/profit factor/i)).toBeInTheDocument();
-    expect(screen.getByText("2.1")).toBeInTheDocument();
+    expect(screen.getByText("2.10")).toBeInTheDocument();
     expect(screen.getByText(/avg trade/i)).toBeInTheDocument();
     expect(screen.getByText("42")).toBeInTheDocument();
   });

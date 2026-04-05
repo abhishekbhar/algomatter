@@ -23,9 +23,10 @@ def apply_mapping(payload: dict, template: dict) -> StandardSignal:
     # Normalize
     resolved["action"] = str(resolved["action"]).upper()
     resolved["quantity"] = Decimal(str(resolved["quantity"]))
-    if resolved.get("price"):
-        resolved["price"] = Decimal(str(resolved["price"]))
-    if resolved.get("trigger_price"):
-        resolved["trigger_price"] = Decimal(str(resolved["trigger_price"]))
+    for decimal_field in ("price", "trigger_price", "take_profit", "stop_loss"):
+        if resolved.get(decimal_field):
+            resolved[decimal_field] = Decimal(str(resolved[decimal_field]))
+    if resolved.get("leverage") is not None:
+        resolved["leverage"] = int(resolved["leverage"])
 
     return StandardSignal(**resolved)

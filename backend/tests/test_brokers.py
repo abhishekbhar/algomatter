@@ -1,7 +1,9 @@
 # tests/test_brokers.py
 import pytest
 from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.brokers.base import OrderRequest, OrderResponse, Position, AccountBalance
+from app.brokers.exchange1 import Exchange1Broker
 from app.brokers.simulated import SimulatedBroker
 
 
@@ -96,3 +98,214 @@ async def test_simulated_insufficient_balance():
     )
     resp = await broker.place_order(order)
     assert resp.status == "rejected"
+
+
+# ---------------------------------------------------------------------------
+# Exchange1 futures path tests (mocked, no live API calls)
+# ---------------------------------------------------------------------------
+
+def _make_exchange1() -> Exchange1Broker:
+    """Return an Exchange1Broker with signing infrastructure mocked out."""
+    broker = Exchange1Broker()
+    broker._api_key = "test-key"
+    broker._recv_window = "5000"
+    # Mock _post and _get so no real HTTP calls are made
+    broker._post = AsyncMock()
+    broker._get = AsyncMock()
+    return broker
+
+
+def test_futures_symbol_conversion():
+    assert Exchange1Broker._futures_symbol("BTCUSDT") == "btc"
+    assert Exchange1Broker._futures_symbol("ETHUSDT") == "eth"
+    assert Exchange1Broker._futures_symbol("BTC") == "btc"
+    assert Exchange1Broker._futures_symbol("SOLUSDT") == "sol"
+    assert Exchange1Broker._futures_symbol("btcusdt") == "btc"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_buy_builds_correct_body():
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "98765"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT",
+        exchange="exchange1",
+        action="BUY",
+        quantity=Decimal("2"),
+        order_type="LIMIT",
+        price=Decimal("66000"),
+        product_type="FUTURES",
+    )
+    resp = await broker.place_order(order)
+
+    broker._post.assert_called_once_with(
+        "/openapi/v1/futures/order/create",
+        body={
+            "symbol": "btc",
+            "positionType": "limit",
+            "positionSide": "long",
+            "quantity": "2",
+            "quantityUnit": "cont",
+            "positionModel": "fix",
+            "price": "66000",
+        },
+        signed=True,
+    )
+    assert resp.status == "open"
+    assert resp.order_id == "futures:98765"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_leverage_and_cross_margin():
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "55555"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT",
+        exchange="exchange1",
+        action="BUY",
+        quantity=Decimal("1"),
+        order_type="MARKET",
+        price=Decimal("0"),
+        product_type="FUTURES",
+        leverage=20,
+        position_model="cross",
+    )
+    await broker.place_order(order)
+
+    body = broker._post.call_args.kwargs["body"]
+    assert body["leverage"] == "20"
+    assert body["positionModel"] == "cross"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_isolated_is_fix():
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "66666"}
+
+    order = OrderRequest(
+        symbol="ETHUSDT",
+        exchange="exchange1",
+        action="BUY",
+        quantity=Decimal("1"),
+        order_type="MARKET",
+        price=Decimal("0"),
+        product_type="FUTURES",
+        position_model="isolated",
+    )
+    await broker.place_order(order)
+
+    body = broker._post.call_args.kwargs["body"]
+    assert body["positionModel"] == "fix"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_tp_sl():
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "77777"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT",
+        exchange="exchange1",
+        action="BUY",
+        quantity=Decimal("1"),
+        order_type="LIMIT",
+        price=Decimal("65000"),
+        product_type="FUTURES",
+        leverage=10,
+        take_profit=Decimal("70000"),
+        stop_loss=Decimal("62000"),
+    )
+    await broker.place_order(order)
+
+    body = broker._post.call_args.kwargs["body"]
+    assert body["takeProfitPrice"] == "70000"
+    assert body["stopLossPrice"] == "62000"
+    assert body["leverage"] == "10"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_sell_closes_position():
+    """SELL on futures → close via /openapi/v1/futures/order/close, not open short."""
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "11111"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT",
+        exchange="exchange1",
+        action="SELL",
+        quantity=Decimal("1"),
+        order_type="MARKET",
+        price=Decimal("0"),
+        product_type="FUTURES",
+    )
+    resp = await broker.place_order(order)
+
+    broker._post.assert_called_once_with(
+        "/openapi/v1/futures/order/close",
+        body={"symbol": "btc", "positionType": "market", "closeType": "all"},
+        signed=True,
+    )
+    assert resp.order_id == "futures:11111"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_sell_limit_includes_price():
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "22222"}
+
+    order = OrderRequest(
+        symbol="ETHUSDT",
+        exchange="exchange1",
+        action="SELL",
+        quantity=Decimal("1"),
+        order_type="LIMIT",
+        price=Decimal("3200"),
+        product_type="FUTURES",
+    )
+    resp = await broker.place_order(order)
+
+    call_body = broker._post.call_args.kwargs["body"]
+    assert broker._post.call_args.args[0] == "/openapi/v1/futures/order/close"
+    assert call_body["symbol"] == "eth"
+    assert call_body["closeType"] == "all"
+    assert call_body["price"] == "3200"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_cancel_routes_correctly():
+    broker = _make_exchange1()
+    broker._post.return_value = {}
+
+    await broker.cancel_order("futures:42")
+    broker._post.assert_called_once_with(
+        "/openapi/v1/futures/order/cancel",
+        body={"id": "42"},
+        signed=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_exchange1_spot_cancel_routes_correctly():
+    broker = _make_exchange1()
+    broker._post.return_value = {}
+
+    await broker.cancel_order("spot-order-99")
+    broker._post.assert_called_once_with(
+        "/openapi/v1/spot/order/cancel",
+        body={"id": "spot-order-99"},
+        signed=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_order_status_filled_when_absent():
+    """Order not in current list → treated as filled."""
+    broker = _make_exchange1()
+    broker._get.return_value = {"data": {"list": []}}
+
+    status = await broker.get_order_status("futures:999")
+
+    assert status.status == "filled"
+    assert status.order_id == "futures:999"

@@ -27,8 +27,14 @@ class OrderRequest(BaseModel):
     quantity: Decimal
     order_type: Literal["MARKET", "LIMIT", "SL", "SL-M"]
     price: Decimal
-    product_type: Literal["INTRADAY", "DELIVERY", "CNC", "MIS"]
+    product_type: Literal["INTRADAY", "DELIVERY", "CNC", "MIS", "FUTURES"]
     trigger_price: Decimal | None = None
+
+    # Futures-specific (ignored by spot adapters)
+    leverage: int | None = None          # e.g. 20
+    position_model: str | None = None    # "isolated" → "fix", "cross" → "cross"
+    take_profit: Decimal | None = None   # TP price
+    stop_loss: Decimal | None = None     # SL price
 
 
 class OrderResponse(BaseModel):

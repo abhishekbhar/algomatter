@@ -5,7 +5,10 @@ import * as useApiModule from "@/lib/hooks/useApi";
 
 jest.mock("@/lib/hooks/useApi");
 jest.mock("@/components/charts/EquityCurve", () => ({ EquityCurve: () => <div data-testid="equity-curve" /> }));
-jest.mock("@/components/charts/ChartContainer", () => ({ ChartContainer: ({ children }: any) => <div>{children("1M")}</div> }));
+jest.mock("@/components/charts/ChartContainer", () => ({
+  ChartContainer: ({ children }: any) => <div>{children("1M")}</div>,
+  filterByTimeframe: (data: any[]) => data,
+}));
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push: jest.fn() }) }));
 
 const mockOverview = {
@@ -19,6 +22,7 @@ describe("DashboardPage", () => {
     (useApiModule.useWebhookSignals as jest.Mock).mockReturnValue({ data: [], error: undefined, isLoading: false, mutate: jest.fn(), isValidating: false });
     (useApiModule.useStrategies as jest.Mock).mockReturnValue({ data: [], error: undefined, isLoading: false, mutate: jest.fn(), isValidating: false });
     (useApiModule.usePaperSessions as jest.Mock).mockReturnValue({ data: [], error: undefined, isLoading: false, mutate: jest.fn(), isValidating: false });
+    (useApiModule.useActiveDeployments as jest.Mock).mockReturnValue({ data: [], error: undefined, isLoading: false, mutate: jest.fn(), isValidating: false });
   });
   it("renders stat cards", () => {
     render(<ChakraProvider><DashboardPage /></ChakraProvider>);

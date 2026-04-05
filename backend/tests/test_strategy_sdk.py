@@ -12,11 +12,12 @@ from app.strategy_sdk.models import Candle, PendingOrder, Portfolio, Position
 # Helpers
 # ---------------------------------------------------------------------------
 
-def make_candle(close: float, ts: datetime | None = None) -> Candle:
+def make_candle(close: float, ts: datetime | None = None, symbol: str = "BTCUSDT") -> Candle:
     """Create a Candle with sensible defaults; only *close* is required."""
     if ts is None:
         ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
     return Candle(
+        symbol=symbol,
         timestamp=ts,
         open=close,
         high=close + 1.0,

@@ -79,6 +79,7 @@ class AlgoMatterStrategy:
         order_type: str = "market",
         price: float | None = None,
         trigger_price: float | None = None,
+        symbol: str | None = None,
     ) -> str:
         """Place a buy order. Returns a generated order ID."""
         order_id = uuid.uuid4().hex[:16]
@@ -100,6 +101,7 @@ class AlgoMatterStrategy:
         order_type: str = "market",
         price: float | None = None,
         trigger_price: float | None = None,
+        symbol: str | None = None,
     ) -> str:
         """Place a sell order. Returns a generated order ID."""
         order_id = uuid.uuid4().hex[:16]

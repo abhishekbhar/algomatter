@@ -145,6 +145,10 @@ async def receive_webhook(
                                 price=signal.price or Decimal("0"),
                                 product_type=signal.product_type or "DELIVERY",
                                 trigger_price=signal.trigger_price,
+                                leverage=signal.leverage,
+                                position_model=signal.position_model,
+                                take_profit=signal.take_profit,
+                                stop_loss=signal.stop_loss,
                             )
                             result = await broker.place_order(order_req)
                             execution_result = result.status

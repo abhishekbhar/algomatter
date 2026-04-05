@@ -40,10 +40,10 @@ TEMPLATES: list[dict] = [
             '        sma = sum(self.state["prices"]) / period\n'
             '\n'
             '        if candle.close > sma and self.state["position"] != "long":\n'
-            '            self.buy(symbol=candle.symbol, quantity=1)\n'
+            '            self.buy(symbol=candle.symbol, quantity=0.01)\n'
             '            self.state["position"] = "long"\n'
             '        elif candle.close < sma and self.state["position"] == "long":\n'
-            '            self.sell(symbol=candle.symbol, quantity=1)\n'
+            '            self.sell(symbol=candle.symbol, quantity=0.01)\n'
             '            self.state["position"] = None\n'
         ),
     },
@@ -95,10 +95,10 @@ TEMPLATES: list[dict] = [
             '            return\n'
             '\n'
             '        if rsi < oversold and self.state["position"] != "long":\n'
-            '            self.buy(symbol=candle.symbol, quantity=1)\n'
+            '            self.buy(symbol=candle.symbol, quantity=0.01)\n'
             '            self.state["position"] = "long"\n'
             '        elif rsi > overbought and self.state["position"] == "long":\n'
-            '            self.sell(symbol=candle.symbol, quantity=1)\n'
+            '            self.sell(symbol=candle.symbol, quantity=0.01)\n'
             '            self.state["position"] = None\n'
         ),
     },
@@ -163,11 +163,11 @@ TEMPLATES: list[dict] = [
             '        # Crossover detection\n'
             '        if prev_macd <= prev_signal and macd_val > signal_val:\n'
             '            if self.state["position"] != "long":\n'
-            '                self.buy(symbol=candle.symbol, quantity=1)\n'
+            '                self.buy(symbol=candle.symbol, quantity=0.01)\n'
             '                self.state["position"] = "long"\n'
             '        elif prev_macd >= prev_signal and macd_val < signal_val:\n'
             '            if self.state["position"] == "long":\n'
-            '                self.sell(symbol=candle.symbol, quantity=1)\n'
+            '                self.sell(symbol=candle.symbol, quantity=0.01)\n'
             '                self.state["position"] = None\n'
         ),
     },
@@ -212,10 +212,10 @@ TEMPLATES: list[dict] = [
             '        lower = sma - num_std * std\n'
             '\n'
             '        if candle.close > upper and self.state["position"] != "long":\n'
-            '            self.buy(symbol=candle.symbol, quantity=1)\n'
+            '            self.buy(symbol=candle.symbol, quantity=0.01)\n'
             '            self.state["position"] = "long"\n'
             '        elif candle.close < lower and self.state["position"] == "long":\n'
-            '            self.sell(symbol=candle.symbol, quantity=1)\n'
+            '            self.sell(symbol=candle.symbol, quantity=0.01)\n'
             '            self.state["position"] = None\n'
         ),
     },

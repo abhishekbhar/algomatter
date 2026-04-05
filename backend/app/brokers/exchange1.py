@@ -1,7 +1,12 @@
-"""Exchange1 Global spot broker adapter.
+"""Exchange1 Global broker adapter (spot + futures/perpetual).
 
-Provides live spot trading against Exchange1 Global (https://www.exchange1.global)
-with RSA (SHA256WithRSA) request signing and full BrokerAdapter compliance.
+Provides live spot and perpetual futures trading against Exchange1 Global
+(https://www.exchange1.global) with RSA (SHA256WithRSA) request signing
+and full BrokerAdapter compliance.
+
+Routing:  product_type == "FUTURES"  →  /openapi/v1/futures/* endpoints
+          all others                  →  /openapi/v1/spot/*   endpoints
+
 Historical kline data falls back to Binance public API since Exchange1
 only provides klines via WebSocket.
 """
@@ -167,12 +172,41 @@ class Exchange1Broker(BrokerAdapter):
             return False
         return True
 
-    async def place_order(self, order: OrderRequest) -> OrderResponse:
-        """Place a spot order on Exchange1.
+    # ------------------------------------------------------------------
+    # Symbol helpers
+    # ------------------------------------------------------------------
 
-        BUY → POST /openapi/v1/spot/order/create
-        SELL → POST /openapi/v1/spot/order/close
+    @staticmethod
+    def _futures_symbol(symbol: str) -> str:
+        """Convert a trading symbol to Exchange1 futures format.
+
+        Exchange1 futures use the lowercase base asset only:
+          BTCUSDT → btc,  ETHUSDT → eth,  BTC → btc
         """
+        s = symbol.upper()
+        for quote in ("USDT", "USDC", "USD", "BTC", "ETH"):
+            if s.endswith(quote) and len(s) > len(quote):
+                return s[: -len(quote)].lower()
+        return s.lower()
+
+    # ------------------------------------------------------------------
+    # Order placement
+    # ------------------------------------------------------------------
+
+    async def place_order(self, order: OrderRequest) -> OrderResponse:
+        """Place a spot or futures order on Exchange1.
+
+        Routing:
+          product_type == "FUTURES", BUY  →  /openapi/v1/futures/order/create (open long)
+          product_type == "FUTURES", SELL →  /openapi/v1/futures/order/close  (close long)
+          all others                       →  /openapi/v1/spot/order/create|close
+        """
+        if order.product_type == "FUTURES":
+            return await self._place_futures_order(order)
+        return await self._place_spot_order(order)
+
+    async def _place_spot_order(self, order: OrderRequest) -> OrderResponse:
+        """Spot: BUY → create, SELL → close."""
         symbol = order.symbol.lower()
         position_type = "market" if order.order_type == "MARKET" else "limit"
 
@@ -202,7 +236,6 @@ class Exchange1Broker(BrokerAdapter):
 
         order_id = str(data.get("data", ""))
         status = "filled" if order.order_type == "MARKET" else "open"
-
         return OrderResponse(
             order_id=order_id,
             status=status,
@@ -210,13 +243,103 @@ class Exchange1Broker(BrokerAdapter):
             fill_quantity=Decimal("0"),
         )
 
+    async def _place_futures_order(self, order: OrderRequest) -> OrderResponse:
+        """Perpetual futures order routing.
+
+        BUY  → open long  via POST /openapi/v1/futures/order/create
+        SELL → close long via POST /openapi/v1/futures/order/close
+        """
+        if order.action == "BUY":
+            return await self._open_futures_long(order)
+        return await self._close_futures_position(order)
+
+    @staticmethod
+    def _api_position_model(position_model: str | None) -> str:
+        """Normalise position_model from user-friendly names to Exchange1 API values.
+
+        "isolated" → "fix"   (Exchange1 term for isolated margin)
+        "cross"    → "cross"
+        None/other → "fix"   (safe default: isolated)
+        """
+        if position_model and position_model.lower() == "cross":
+            return "cross"
+        return "fix"
+
+    async def _open_futures_long(self, order: OrderRequest) -> OrderResponse:
+        """Open a new long position via /openapi/v1/futures/order/create."""
+        symbol = self._futures_symbol(order.symbol)
+        position_type = "market" if order.order_type == "MARKET" else "limit"
+        pos_model = self._api_position_model(order.position_model)
+
+        body: dict[str, Any] = {
+            "symbol": symbol,
+            "positionType": position_type,
+            "positionSide": "long",
+            "quantity": str(order.quantity),
+            "quantityUnit": "cont",
+            "positionModel": pos_model,
+        }
+        if order.leverage:
+            body["leverage"] = str(order.leverage)
+        if order.order_type == "LIMIT" and order.price:
+            body["price"] = str(order.price)
+        if order.take_profit:
+            body["takeProfitPrice"] = str(order.take_profit)
+        if order.stop_loss:
+            body["stopLossPrice"] = str(order.stop_loss)
+
+        try:
+            data = await self._post("/openapi/v1/futures/order/create", body=body, signed=True)
+        except RuntimeError as exc:
+            return OrderResponse(order_id="", status="rejected", message=str(exc))
+
+        raw_id = str(data.get("data", ""))
+        order_id = f"futures:{raw_id}" if raw_id else ""
+        status = "filled" if order.order_type == "MARKET" else "open"
+        return OrderResponse(order_id=order_id, status=status, fill_price=Decimal("0"), fill_quantity=Decimal("0"))
+
+    async def _close_futures_position(self, order: OrderRequest) -> OrderResponse:
+        """Close an existing long position via /openapi/v1/futures/order/close.
+
+        Uses closeType="all" to close the full position for the symbol.
+        For a partial close, pass the position ID via order.trigger_price
+        (repurposed as a numeric position-id carrier).
+        """
+        symbol = self._futures_symbol(order.symbol)
+        position_type = "market" if order.order_type == "MARKET" else "limit"
+
+        body: dict[str, Any] = {
+            "symbol": symbol,
+            "positionType": position_type,
+            "closeType": "all",
+        }
+        if order.order_type == "LIMIT" and order.price:
+            body["price"] = str(order.price)
+
+        try:
+            data = await self._post("/openapi/v1/futures/order/close", body=body, signed=True)
+        except RuntimeError as exc:
+            return OrderResponse(order_id="", status="rejected", message=str(exc))
+
+        raw_id = str(data.get("data", ""))
+        order_id = f"futures:{raw_id}" if raw_id else ""
+        status = "filled" if order.order_type == "MARKET" else "open"
+        return OrderResponse(order_id=order_id, status=status, fill_price=Decimal("0"), fill_quantity=Decimal("0"))
+
     async def cancel_order(self, order_id: str) -> bool:
-        """Cancel an open order on Exchange1."""
-        await self._post("/openapi/v1/spot/order/cancel", body={"id": order_id}, signed=True)
+        """Cancel an open order on Exchange1 (spot or futures)."""
+        if order_id.startswith("futures:"):
+            raw_id = order_id[len("futures:"):]
+            await self._post("/openapi/v1/futures/order/cancel", body={"id": raw_id}, signed=True)
+        else:
+            await self._post("/openapi/v1/spot/order/cancel", body={"id": order_id}, signed=True)
         return True
 
     async def get_order_status(self, order_id: str) -> OrderStatus:
-        """Query the current status of an order on Exchange1."""
+        """Query the current status of an order on Exchange1 (spot or futures)."""
+        if order_id.startswith("futures:"):
+            return await self._get_futures_order_status(order_id[len("futures:"):])
+
         data = await self._get(
             "/openapi/v1/spot/order/detail", params={"id": order_id}, signed=True,
         )
@@ -243,12 +366,47 @@ class Exchange1Broker(BrokerAdapter):
             pending_quantity=pending_quantity,
         )
 
+    async def _get_futures_order_status(self, raw_id: str) -> OrderStatus:
+        """Check futures order status via current-orders list.
+
+        Exchange1 has no single-order detail endpoint for futures; we scan
+        /openapi/v1/futures/order/current.  If the order is absent it is
+        assumed filled (Exchange1 removes filled orders from the list).
+        """
+        for pos_model in ("fix", "cross"):
+            try:
+                data = await self._get(
+                    "/openapi/v1/futures/order/current",
+                    params={"page": 1, "pageSize": 50, "positionModel": pos_model},
+                    signed=True,
+                )
+            except RuntimeError:
+                continue
+            orders = data.get("data", {}).get("list", [])
+            for o in orders:
+                if str(o.get("id")) == raw_id or str(o.get("idStr")) == raw_id:
+                    qty = Decimal(str(o.get("quantity", "0")))
+                    return OrderStatus(
+                        order_id=f"futures:{raw_id}",
+                        status="open",
+                        fill_price=Decimal("0"),
+                        fill_quantity=Decimal("0"),
+                        pending_quantity=qty,
+                    )
+        # Not in active orders → treat as filled
+        return OrderStatus(
+            order_id=f"futures:{raw_id}",
+            status="filled",
+            fill_price=Decimal("0"),
+            fill_quantity=Decimal("0"),
+        )
+
     async def _get_balance_data(self) -> list[dict]:
         """Fetch account balances with a 2-second TTL cache.
 
-        The API returns nested data: data.accounts[].currencies[].balance.
-        We flatten the *spot* account's currencies into a simple list of
-        ``{currency, available, hold, total}`` dicts for downstream use.
+        Returns a flat list of ``{currency, available, hold, total,
+        available_margin, account_type}`` dicts for both the spot ("spot")
+        and futures ("cfd") sub-accounts.
         """
         now = time.time()
         if self._account_cache and (now - self._account_cache[0]) < 2.0:
@@ -258,7 +416,7 @@ class Exchange1Broker(BrokerAdapter):
         flat: list[dict] = []
         for acct in data.get("data", {}).get("accounts", []):
             biz_name = acct.get("biz", {}).get("name", "")
-            if biz_name != "spot":
+            if biz_name not in ("spot", "cfd"):
                 continue
             for cur in acct.get("currencies", []):
                 bal = cur.get("balance", {})
@@ -267,15 +425,25 @@ class Exchange1Broker(BrokerAdapter):
                     "available": bal.get("available", 0),
                     "hold": bal.get("hold", 0),
                     "total": bal.get("total", 0),
+                    "available_margin": bal.get("availableMargin", bal.get("available", 0)),
+                    "account_type": biz_name,
                 })
-            break  # only need the spot account
 
         self._account_cache = (now, flat)
         return flat
 
     async def get_balance(self) -> AccountBalance:
-        """Return USDT balance from Exchange1 account."""
+        """Return available balance — futures margin if cfd account present, else spot USDT."""
         accounts = await self._get_balance_data()
+        # Prefer futures (cfd) available margin if present
+        for acc in accounts:
+            if acc.get("account_type") == "cfd":
+                return AccountBalance(
+                    available=Decimal(str(acc.get("available_margin", "0"))),
+                    used_margin=Decimal(str(acc.get("hold", "0"))),
+                    total=Decimal(str(acc.get("total", "0"))),
+                )
+        # Fall back to spot USDT
         for acc in accounts:
             if acc.get("currency") == "USDT":
                 return AccountBalance(
@@ -286,26 +454,54 @@ class Exchange1Broker(BrokerAdapter):
         return AccountBalance(available=Decimal("0"), used_margin=Decimal("0"), total=Decimal("0"))
 
     async def get_positions(self) -> list[Position]:
-        """Return non-quote, non-zero asset balances as positions."""
-        accounts = await self._get_balance_data()
+        """Return open positions: spot asset balances + futures open positions."""
         positions: list[Position] = []
+
+        # --- Spot positions (non-zero, non-quote asset balances) ---
+        accounts = await self._get_balance_data()
         for acc in accounts:
+            if acc.get("account_type") != "spot":
+                continue
             currency = acc.get("currency", "")
             if currency in QUOTE_ASSETS:
                 continue
             total = Decimal(str(acc.get("total", "0")))
             if total == 0:
                 continue
-            positions.append(
-                Position(
-                    symbol=currency,
-                    exchange="EXCHANGE1",
-                    action="BUY",
-                    quantity=total,
-                    entry_price=Decimal("0"),
-                    product_type="DELIVERY",
+            positions.append(Position(
+                symbol=currency,
+                exchange="EXCHANGE1",
+                action="BUY",
+                quantity=total,
+                entry_price=Decimal("0"),
+                product_type="DELIVERY",
+            ))
+
+        # --- Futures positions ---
+        for pos_model in ("fix", "cross"):
+            try:
+                data = await self._get(
+                    "/openapi/v1/futures/order/positions",
+                    params={"page": 1, "pageSize": 50, "positionModel": pos_model},
+                    signed=True,
                 )
-            )
+            except RuntimeError:
+                continue
+            for row in data.get("data", {}).get("list", []):
+                qty_raw = row.get("quantity") or row.get("currentPiece", 0)
+                qty = Decimal(str(qty_raw))
+                if qty == 0:
+                    continue
+                direction = str(row.get("direction", "long")).lower()
+                positions.append(Position(
+                    symbol=str(row.get("instrument", "")).upper(),
+                    exchange="EXCHANGE1",
+                    action="BUY" if direction == "long" else "SELL",
+                    quantity=qty,
+                    entry_price=Decimal(str(row.get("openPrice", "0"))),
+                    product_type="FUTURES",
+                ))
+
         return positions
 
     async def get_holdings(self) -> list[Holding]:

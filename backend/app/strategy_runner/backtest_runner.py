@@ -43,7 +43,7 @@ async def run_backtest_job(deployment_id: uuid.UUID) -> None:
             from app.nautilus_integration.engine import run_backtest
 
             config = deployment.config or {}
-            initial_capital = config.get("initial_capital") or config.get("capital", 10000)
+            initial_capital = config.get("initial_capital") or config.get("capital", 100000)
             start_date = config.get("start_date", "2025-01-01")
             end_date = config.get("end_date", "2025-06-01")
 

@@ -283,6 +283,7 @@ async def list_strategy_deployments(
 )
 async def list_all_deployments(
     status_filter: str | None = Query(None, alias="status"),
+    mode_filter: str | None = Query(None, alias="mode"),
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -294,6 +295,8 @@ async def list_all_deployments(
     )
     if status_filter:
         query = query.where(StrategyDeployment.status == status_filter)
+    if mode_filter:
+        query = query.where(StrategyDeployment.mode == mode_filter)
     query = query.order_by(StrategyDeployment.created_at.desc())
     result = await session.execute(query)
     deployments = result.scalars().all()

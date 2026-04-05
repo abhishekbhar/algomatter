@@ -10,7 +10,7 @@ jest.mock("next/navigation", () => ({ useRouter: () => ({ push: jest.fn() }) }))
 
 describe("BacktestingPage", () => {
   beforeEach(() => {
-    (useApiModule.useStrategies as jest.Mock).mockReturnValue({ data: [{ id: "s1", name: "Test" }], isLoading: false, mutate: jest.fn() });
+    (useApiModule.useAllStrategies as jest.Mock).mockReturnValue([{ id: "s1", name: "Test" }]);
     (useApiModule.useBacktests as jest.Mock).mockReturnValue({ data: [], isLoading: false, mutate: jest.fn() });
   });
   it("renders run backtest form", () => {

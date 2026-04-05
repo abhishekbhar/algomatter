@@ -196,6 +196,7 @@ def _bar_to_candle(bar: Bar) -> Candle:
     ts_ns = bar.ts_event
     dt = datetime.fromtimestamp(ts_ns / 1_000_000_000, tz=timezone.utc)
     return Candle(
+        symbol=bar.bar_type.instrument_id.symbol.value,
         timestamp=dt,
         open=float(bar.open),
         high=float(bar.high),

@@ -4,6 +4,7 @@ from datetime import datetime
 
 @dataclass
 class Candle:
+    symbol: str
     timestamp: datetime
     open: float
     high: float

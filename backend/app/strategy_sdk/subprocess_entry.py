@@ -14,6 +14,7 @@ def _parse_candle(data: dict) -> Candle:
     if isinstance(ts, str):
         ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
     return Candle(
+        symbol=data["symbol"],
         timestamp=ts,
         open=float(data["open"]),
         high=float(data["high"]),
