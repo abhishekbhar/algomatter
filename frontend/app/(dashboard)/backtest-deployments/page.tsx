@@ -1,12 +1,12 @@
 "use client";
-import { Box, Heading, SimpleGrid, Spinner, Center } from "@chakra-ui/react";
+import { Box, Heading, SimpleGrid, Spinner, Center, useToast } from "@chakra-ui/react";
 import { useState } from "react";
 import { useBacktestDeployments, useDeploymentResults, usePaperDeployments } from "@/lib/hooks/useApi";
 import { BacktestDeploymentCard } from "@/components/backtest-deployments/BacktestDeploymentCard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { apiClient } from "@/lib/api/client";
 import { useRouter } from "next/navigation";
-import type { Deployment, DeploymentResult } from "@/lib/api/types";
+import type { Deployment } from "@/lib/api/types";
 
 const MAX_SPARKLINES = 10;
 
@@ -43,6 +43,7 @@ export default function BacktestDeploymentsPage() {
   const { data: paperDeployments = [] } = usePaperDeployments();
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const router = useRouter();
+  const toast = useToast();
 
   const handlePromote = async (id: string) => {
     setPromotingId(id);
@@ -50,6 +51,8 @@ export default function BacktestDeploymentsPage() {
       await apiClient(`/api/v1/deployments/${id}/promote`, { method: "POST" });
       mutate();
       router.push("/paper-trading");
+    } catch {
+      toast({ title: "Failed to promote deployment", status: "error", duration: 4000, isClosable: true });
     } finally {
       setPromotingId(null);
     }
