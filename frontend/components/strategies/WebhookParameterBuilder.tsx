@@ -256,8 +256,10 @@ export function WebhookParameterBuilder({ onChange, webhookUrl }: Props) {
             inputType="number"
             showPriceError={
               isLimitFixed &&
-              !rowState.signalField &&
-              (rowState.fixedValue === null || rowState.fixedValue === "")
+              (
+                (rowState.source === "signal" && !rowState.signalField) ||
+                (rowState.source === "fixed" && (rowState.fixedValue === null || rowState.fixedValue === ""))
+              )
             }
             {...commonProps}
           />
