@@ -178,8 +178,20 @@ export function useDeployments(strategyId: string | undefined) {
   );
 }
 
-export function useDeployment(id: string | undefined) {
-  return useApiGet<Deployment>(id ? `/api/v1/deployments/${id}` : null, { refreshInterval: 2000 });
+export function useDeployment(id: string | undefined, config?: { refreshInterval?: number }) {
+  return useApiGet<Deployment>(id ? `/api/v1/deployments/${id}` : null, {
+    refreshInterval: config?.refreshInterval ?? 2000,
+  });
+}
+
+export function useBacktestDeployments() {
+  return useApiGet<Deployment[]>("/api/v1/deployments?mode=backtest", {
+    refreshInterval: 5000,
+  });
+}
+
+export function usePaperDeployments() {
+  return useApiGet<Deployment[]>("/api/v1/deployments?mode=paper");
 }
 
 export function useDeploymentResults(id: string | undefined) {
@@ -187,16 +199,24 @@ export function useDeploymentResults(id: string | undefined) {
 }
 
 export function useActiveDeployments() {
-  const { data: running, ...runningRest } = useApiGet<Deployment[]>(
-    "/api/v1/deployments?status=running",
+  const { data: runningLive, ...runningRest } = useApiGet<Deployment[]>(
+    "/api/v1/deployments?status=running&mode=live",
     { refreshInterval: 2000 }
   );
-  const { data: paused } = useApiGet<Deployment[]>(
-    "/api/v1/deployments?status=paused",
+  const { data: runningPaper } = useApiGet<Deployment[]>(
+    "/api/v1/deployments?status=running&mode=paper",
     { refreshInterval: 2000 }
   );
-  const data = [...(running ?? []), ...(paused ?? [])];
-  return { data: data.length > 0 || running || paused ? data : undefined, ...runningRest };
+  const { data: pausedLive } = useApiGet<Deployment[]>(
+    "/api/v1/deployments?status=paused&mode=live",
+    { refreshInterval: 2000 }
+  );
+  const { data: pausedPaper } = useApiGet<Deployment[]>(
+    "/api/v1/deployments?status=paused&mode=paper",
+    { refreshInterval: 2000 }
+  );
+  const data = [...(runningLive ?? []), ...(runningPaper ?? []), ...(pausedLive ?? []), ...(pausedPaper ?? [])];
+  return { data: data.length > 0 || runningLive || runningPaper ? data : undefined, ...runningRest };
 }
 
 export function useDeploymentLogs(id: string | undefined, offset = 0, limit = 50) {
@@ -217,10 +237,10 @@ export function useRecentTrades(limit = 20) {
   );
 }
 
-export function useDeploymentTrades(id: string | undefined, offset = 0, limit = 50) {
+export function useDeploymentTrades(id: string | undefined, offset = 0, limit = 50, config?: { refreshInterval?: number }) {
   return useApiGet<TradesResponse>(
     id ? `/api/v1/deployments/${id}/trades?offset=${offset}&limit=${limit}` : null,
-    { refreshInterval: 5000 }
+    { refreshInterval: config?.refreshInterval ?? 5000 }
   );
 }
 
