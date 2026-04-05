@@ -127,7 +127,8 @@ class Exchange1Broker(BrokerAdapter):
 
     async def _post(self, path: str, body: dict[str, Any] | None = None, signed: bool = False) -> dict:
         assert self._client is not None, "Client not initialised; call authenticate() first"
-        body = dict(body or {})
+        # Strip None and empty-string values so the signed body matches the signature exactly
+        body = {k: v for k, v in (body or {}).items() if v is not None and v != ""}
         headers: dict[str, str] = {}
         if signed:
             headers = self._build_signed_headers(body)
@@ -405,8 +406,8 @@ class Exchange1Broker(BrokerAdapter):
         """Fetch account balances with a 2-second TTL cache.
 
         Returns a flat list of ``{currency, available, hold, total,
-        available_margin, account_type}`` dicts for both the spot ("spot")
-        and futures ("cfd") sub-accounts.
+        available_margin, account_type}`` dicts for spot, cfd, and asset
+        sub-accounts.
         """
         now = time.time()
         if self._account_cache and (now - self._account_cache[0]) < 2.0:
@@ -416,7 +417,7 @@ class Exchange1Broker(BrokerAdapter):
         flat: list[dict] = []
         for acct in data.get("data", {}).get("accounts", []):
             biz_name = acct.get("biz", {}).get("name", "")
-            if biz_name not in ("spot", "cfd"):
+            if biz_name not in ("spot", "cfd", "asset"):
                 continue
             for cur in acct.get("currencies", []):
                 bal = cur.get("balance", {})
@@ -433,19 +434,33 @@ class Exchange1Broker(BrokerAdapter):
         return flat
 
     async def get_balance(self) -> AccountBalance:
-        """Return available balance — futures margin if cfd account present, else spot USDT."""
+        """Return available balance.
+
+        Priority:
+        1. First cfd entry with non-zero available margin.
+        2. First asset entry with non-zero available balance.
+        3. Spot USDT balance.
+        """
         accounts = await self._get_balance_data()
-        # Prefer futures (cfd) available margin if present
+        # 1. cfd with funds
         for acc in accounts:
-            if acc.get("account_type") == "cfd":
+            if acc.get("account_type") == "cfd" and Decimal(str(acc.get("available_margin", "0"))) > 0:
                 return AccountBalance(
                     available=Decimal(str(acc.get("available_margin", "0"))),
                     used_margin=Decimal(str(acc.get("hold", "0"))),
                     total=Decimal(str(acc.get("total", "0"))),
                 )
-        # Fall back to spot USDT
+        # 2. asset with funds
         for acc in accounts:
-            if acc.get("currency") == "USDT":
+            if acc.get("account_type") == "asset" and Decimal(str(acc.get("available", "0"))) > 0:
+                return AccountBalance(
+                    available=Decimal(str(acc.get("available", "0"))),
+                    used_margin=Decimal(str(acc.get("hold", "0"))),
+                    total=Decimal(str(acc.get("total", "0"))),
+                )
+        # 3. spot USDT
+        for acc in accounts:
+            if acc.get("currency") == "USDT" and acc.get("account_type") == "spot":
                 return AccountBalance(
                     available=Decimal(str(acc.get("available", "0"))),
                     used_margin=Decimal(str(acc.get("hold", "0"))),
