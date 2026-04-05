@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { ChakraProvider } from "@chakra-ui/react";
 import { BacktestDeploymentCard } from "@/components/backtest-deployments/BacktestDeploymentCard";
 import type { Deployment, DeploymentResult } from "@/lib/api/types";
 
+const mockPush = jest.fn();
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mockPush }),
 }));
 
 const baseDeployment: Deployment = {
@@ -86,5 +87,20 @@ describe("BacktestDeploymentCard", () => {
     const running = { ...baseDeployment, status: "running" as const };
     wrap(<BacktestDeploymentCard deployment={running} result={null} isPromoted={false} onPromote={jest.fn()} />);
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("navigates to detail page on card click", () => {
+    mockPush.mockClear();
+    wrap(<BacktestDeploymentCard deployment={baseDeployment} result={null} isPromoted={false} onPromote={jest.fn()} />);
+    fireEvent.click(screen.getByText("momentum_v2"));
+    expect(mockPush).toHaveBeenCalledWith("/backtest-deployments/dep-1");
+  });
+
+  it("shows skeleton when result is undefined for completed deployment", () => {
+    const { container } = wrap(
+      <BacktestDeploymentCard deployment={baseDeployment} result={undefined} isPromoted={false} onPromote={jest.fn()} />
+    );
+    // Chakra Skeleton renders with data-testid or aria attributes — check for the skeleton wrapper
+    expect(container.querySelector('[aria-busy="true"], [data-loading]') ?? container.querySelector(".chakra-skeleton")).toBeTruthy();
   });
 });

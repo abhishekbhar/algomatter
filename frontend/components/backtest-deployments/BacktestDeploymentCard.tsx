@@ -16,6 +16,7 @@ interface Props {
 
 const STATUS_COLORS: Record<string, string> = {
   running: "yellow",
+  paused: "yellow",
   pending: "gray",
   completed: "green",
   failed: "red",
@@ -89,7 +90,7 @@ export function BacktestDeploymentCard({
             {result === undefined ? (
               <Skeleton height="40px" borderRadius="sm" />
             ) : (
-              <SparklineChart data={result?.equity_curve ?? null} width={220} height={40} />
+              <SparklineChart data={result !== null ? result.equity_curve : null} width={220} height={40} />
             )}
           </Box>
         )}
