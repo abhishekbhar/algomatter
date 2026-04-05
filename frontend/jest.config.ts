@@ -5,6 +5,7 @@ const config: Config = {
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
+    "^lightweight-charts$": "<rootDir>/__mocks__/lightweight-charts.ts",
   },
   transform: {
     "^.+\\.(ts|tsx)$": [
