@@ -25,16 +25,48 @@ The existing `mapping_template` field stores a JSON object where:
 
 The new UI generates this same JSON structure. The backend webhook handler is untouched.
 
-**Example output of the builder:**
+**Example output of the builder (backend mapping_template):**
 ```json
 {
   "symbol": "BTCUSDT",
+  "exchange": "EXCHANGE1",
   "action": "$.action",
   "order_type": "MARKET",
   "quantity": "$.qty",
+  "product_type": "FUTURES",
   "leverage": 10
 }
 ```
+
+**Example TradingView alert message (separate output, same state):**
+```json
+{
+  "action": "{{action}}",
+  "qty": "{{qty}}"
+}
+```
+
+The TradingView JSON uses only the "From signal" fields. The key is the user-entered field name (the signal side), not the parameter name. Fixed values are not included — TradingView doesn't need them since they're hardcoded in the template.
+
+---
+
+## StandardSignal field names
+
+The builder maps to `StandardSignal` (backend schema). Use exactly these field names as keys in `mapping_template`:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `symbol` | str | Required |
+| `exchange` | str | Required |
+| `action` | str | BUY or SELL |
+| `quantity` | Decimal | Required |
+| `order_type` | str | MARKET, LIMIT |
+| `product_type` | str | INTRADAY, DELIVERY, FUTURES |
+| `price` | Decimal? | LIMIT orders only |
+| `leverage` | int? | Futures only, emitted as JS number |
+| `position_model` | str? | "isolated" or "cross" |
+| `take_profit` | Decimal? | Futures only |
+| `stop_loss` | Decimal? | Futures only |
 
 ---
 
@@ -43,26 +75,30 @@ The new UI generates this same JSON structure. The backend webhook handler is un
 Two modes, selectable via tab:
 
 ### Futures (default)
-| Parameter | Required | Notes |
-|-----------|----------|-------|
-| symbol | Yes | Select from Exchange1 instrument list |
-| action | Yes | BUY (open long) or SELL (close) |
-| order_type | Yes | MARKET or LIMIT |
-| quantity | Yes | Number of contracts |
-| leverage | Yes | 1–100×, default 10× |
-| position_model | No | Isolated (default) or Cross |
-| price | No | Required if LIMIT |
-| take_profit_price | No | Optional |
-| stop_loss_price | No | Optional |
+| Parameter | UI Label | `mapping_template` key | Required | Input type | Notes |
+|-----------|----------|------------------------|----------|------------|-------|
+| symbol | Symbol | `symbol` | Yes | SymbolSelect (exchange="EXCHANGE1") | |
+| exchange | Exchange | `exchange` | Yes | Hidden fixed = "EXCHANGE1" | Always fixed, not shown to user |
+| action | Action | `action` | Yes | Select (BUY/SELL) or From signal | |
+| order_type | Order Type | `order_type` | Yes | Select (MARKET/LIMIT) | |
+| quantity | Quantity | `quantity` | Yes | NumberInput or From signal | Emits JS number when fixed |
+| product_type | — | `product_type` | Yes | Hidden fixed = "FUTURES" | Always fixed, not shown to user |
+| leverage | Leverage | `leverage` | Yes | Select (1–100×), default 10 | Emits JS number (not string) |
+| position_model | Margin Mode | `position_model` | No | Select (isolated/cross), always emitted | Default "isolated"; always emitted even if not changed |
+| price | Price | `price` | No | NumberInput or From signal | Show only when order_type=LIMIT |
+| take_profit | Take Profit | `take_profit` | No | NumberInput or From signal | Optional, in collapsible section |
+| stop_loss | Stop Loss | `stop_loss` | No | NumberInput or From signal | Optional, in collapsible section |
 
 ### Spot
-| Parameter | Required | Notes |
-|-----------|----------|-------|
-| symbol | Yes | Select from Exchange1 instrument list |
-| action | Yes | BUY or SELL |
-| order_type | Yes | MARKET or LIMIT |
-| quantity | Yes | Amount in base asset |
-| price | No | Required if LIMIT |
+| Parameter | UI Label | `mapping_template` key | Required | Input type | Notes |
+|-----------|----------|------------------------|----------|------------|-------|
+| symbol | Symbol | `symbol` | Yes | SymbolSelect (exchange="EXCHANGE1") | |
+| exchange | Exchange | `exchange` | Yes | Hidden fixed = "EXCHANGE1" | Always fixed |
+| action | Action | `action` | Yes | Select or From signal | |
+| order_type | Order Type | `order_type` | Yes | Select (MARKET/LIMIT) | |
+| quantity | Quantity | `quantity` | Yes | NumberInput or From signal | |
+| product_type | — | `product_type` | Yes | Hidden fixed = "DELIVERY" | Always fixed |
+| price | Price | `price` | No | NumberInput or From signal | Show only when order_type=LIMIT |
 
 ---
 
@@ -70,86 +106,149 @@ Two modes, selectable via tab:
 
 ```
 components/strategies/
-  WebhookParameterBuilder.tsx   # Main builder component (replaces Textarea)
+  WebhookParameterBuilder.tsx   # Main builder — renders form + preview side-by-side
   ParameterRow.tsx              # Single row: name + Fixed/Signal toggle + value input
-  TradingViewPreview.tsx        # Right-panel JSON preview with copy button
+  TradingViewPreview.tsx        # JSON preview panel + webhook URL
 ```
 
-**`WebhookParameterBuilder` props:**
+### `WebhookParameterBuilder` props
 ```ts
 interface Props {
-  value: Record<string, unknown> | null;          // current mapping_template value
-  onChange: (value: Record<string, unknown>) => void; // emits on every change
+  value: Record<string, unknown> | null;           // current mapping_template object
+  onChange: (value: Record<string, unknown>) => void;
+  webhookUrl?: string;                             // passed from parent via useWebhookConfig()
 }
 ```
 
-The parent form (`new/page.tsx`) keeps `mapping_template` as `Record<string, unknown>` internally and serializes to JSON only at submit time (already done by `JSON.parse` in the existing handler — this will simplify it).
+### `ParameterRow` props
+```ts
+interface Props {
+  label: string;
+  fieldKey: string;              // mapping_template key (e.g. "action")
+  required?: boolean;
+  source: "fixed" | "signal";
+  fixedValue: string | number | null;
+  signalField: string;           // e.g. "action"
+  inputType: "text" | "number" | "select";
+  selectOptions?: { value: string; label: string }[];
+  onSourceChange: (source: "fixed" | "signal") => void;
+  onFixedChange: (value: string | number) => void;
+  onSignalFieldChange: (fieldName: string) => void;
+}
+```
+
+### `TradingViewPreview` props
+```ts
+interface Props {
+  mappingTemplate: Record<string, unknown>;  // rendered as JSON
+  webhookUrl?: string;
+}
+```
+
+---
+
+## Integration: `new/page.tsx` changes
+
+### 1. Update `StrategyForm` interface
+```ts
+interface StrategyForm {
+  name: string;
+  broker_connection_id: string;
+  mode: string;
+  is_active: boolean;
+  mapping_template_obj: Record<string, unknown> | null;  // replaces mapping_template: string
+  symbol_whitelist: string;
+  symbol_blacklist: string;
+  max_positions: number;
+  max_signals_per_day: number;
+}
+```
+
+### 2. Update initial state
+```ts
+mapping_template_obj: null,
+```
+
+### 3. Fetch webhook URL in parent
+```ts
+const { data: webhookConfig } = useWebhookConfig();
+```
+
+### 4. Replace Textarea
+```tsx
+// Remove:
+<FormControl>
+  <FormLabel>Mapping Template (JSON)</FormLabel>
+  <Textarea ... />
+</FormControl>
+
+// Add:
+<WebhookParameterBuilder
+  value={form.mapping_template_obj}
+  onChange={(val) => setForm({ ...form, mapping_template_obj: val })}
+  webhookUrl={webhookConfig?.webhook_url}
+/>
+```
+
+### 5. Update handleSubmit
+```ts
+mapping_template: form.mapping_template_obj ?? undefined,
+// (remove the old JSON.parse call)
+```
+
+### 6. Widen the page container
+The parent `<Box maxW="600px">` will clip the two-column layout. Widen to `maxW="900px"`.
+
+---
+
+## Numeric type handling
+
+Fields with `inputType: "number"` must emit JavaScript `number` values (not strings) when fixed:
+- Use Chakra `NumberInput` + `onChange={(_, valAsNumber) => ...}` to get the numeric value
+- Affected fields: `quantity`, `leverage`, `price`, `take_profit`, `stop_loss`
+- `leverage` select: store the selected integer (e.g. `10`), not the display string (`"10×"`)
+
+---
+
+## LIMIT price validation
+
+When `order_type` is fixed to "LIMIT", show an inline `<FormHelperText color="red.400">` on the price row if price source is "signal" and the signal field name is empty, or if price source is "fixed" and the value is empty. Block form submission with a toast if price is unconfigured when order_type=LIMIT.
+
+---
+
+## TradingView JSON generation (detailed)
+
+Only "From signal" fields appear in the TradingView JSON. The key is the signal field name entered by the user, not the `mapping_template` key.
+
+Example: parameter `quantity` (mapping key), user enters signal field `qty`:
+- `mapping_template` output: `"quantity": "$.qty"`
+- TradingView output: `"qty": "{{qty}}"`
+
+The TradingView JSON is shown read-only in `TradingViewPreview` with syntax-coloring.
 
 ---
 
 ## UI Layout
 
-Two-column layout on desktop, single column on mobile:
-
-**Left column — Parameter form:**
-- `Tabs` (Futures / Spot) — Chakra UI `Tabs` component with `colorScheme="blue"`
-- Parameter rows in a `VStack`
-- Each row: `Grid` with 3 columns — param name, source toggle, value input
-- Optional parameters hidden behind a `<Button variant="link">` expand toggle
-- Source toggle: two `Button` components — active one uses `colorScheme="green"` (Fixed) or `colorScheme="orange"` (From signal)
-
-**Right column — Live preview:**
-- `Box` with `bg="gray.900"` (dark mode) / `bg="gray.50"` (light)
-- Webhook URL display with copy button
-- JSON preview with color-coded values (green = fixed, orange = from signal)
-- "How to use" accordion with TradingView steps
-
-On mobile (`base`): stack vertically, preview below form.
-
----
-
-## Integration Point
-
-In `app/(dashboard)/strategies/new/page.tsx`:
-
-Replace:
-```tsx
-<FormControl>
-  <FormLabel>Mapping Template (JSON)</FormLabel>
-  <Textarea ... />
-</FormControl>
 ```
-
-With:
-```tsx
-<WebhookParameterBuilder
-  value={form.mapping_template_obj}
-  onChange={(val) => setForm({ ...form, mapping_template_obj: val })}
-/>
+<Grid templateColumns={{ base: "1fr", lg: "1fr 320px" }} gap={6}>
+  <GridItem>  {/* Parameter form */}
+    <Tabs colorScheme="blue">
+      <TabList>
+        <Tab>Futures</Tab>
+        <Tab>Spot</Tab>
+      </TabList>
+      <TabPanels>
+        <TabPanel><VStack>{/* futures rows */}</VStack></TabPanel>
+        <TabPanel><VStack>{/* spot rows */}</VStack></TabPanel>
+      </TabPanels>
+    </Tabs>
+  </GridItem>
+  <GridItem>  {/* Sticky preview */}
+    <TradingViewPreview ... />
+  </GridItem>
+</Grid>
 ```
-
-The form state changes from `mapping_template: string` to `mapping_template_obj: Record<string, unknown> | null`, serialized at submit.
-
----
-
-## TradingView JSON Generation
-
-For each "From signal" parameter with field name `foo`, emit `"{{foo}}"` (TradingView template syntax). For fixed parameters, emit the literal value.
-
-Example (futures, action+qty from signal, everything else fixed):
-```json
-{
-  "action": "{{action}}",
-  "qty": "{{qty}}",
-  "symbol": "BTCUSDT",
-  "order_type": "MARKET",
-  "leverage": 10
-}
-```
-
-The right-panel shows this JSON. User copies it into their TradingView alert "Message" field.
-
-Note: The `mapping_template` sent to the backend uses `"$.action"` JSONPath format, not TradingView `{{action}}` syntax. These are two separate outputs from the same form state.
 
 ---
 
@@ -160,24 +259,13 @@ Note: The `mapping_template` sent to the backend uses `"$.action"` JSONPath form
 | `components/strategies/WebhookParameterBuilder.tsx` | Create |
 | `components/strategies/ParameterRow.tsx` | Create |
 | `components/strategies/TradingViewPreview.tsx` | Create |
-| `app/(dashboard)/strategies/new/page.tsx` | Modify — replace Textarea with builder |
+| `app/(dashboard)/strategies/new/page.tsx` | Modify |
 
 ---
 
 ## Out of Scope
 
-- Editing existing strategies (can be added later; new/page.tsx is the focus)
-- Supporting non-Exchange1 brokers (hardcode Exchange1 params for now)
-- Drag-and-drop field mapping (Approach B — not chosen)
-- Pre-built TradingView templates (Approach C — partially covered by the JSON preview)
+- Editing existing strategies (new/page.tsx only)
+- Supporting non-Exchange1 brokers
+- Drag-and-drop field mapping
 - Backend changes to `mapping_template` schema
-
----
-
-## Key Constraints
-
-- Use Chakra UI v2 components only — no new UI libraries
-- Follow existing patterns: `useDisclosure`, `apiClient`, `useToast`, Chakra color tokens
-- `SymbolSelect` component already exists — reuse it for the symbol parameter
-- Mobile-responsive: `Grid` columns collapse on small screens
-- No new dependencies
