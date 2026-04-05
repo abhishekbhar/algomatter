@@ -1,11 +1,11 @@
 "use client";
 import { Box, Text, Flex } from "@chakra-ui/react";
 import { EquityCurve } from "@/components/charts/EquityCurve";
-import type { DeploymentResult } from "@/lib/api/types";
+import type { Deployment, DeploymentResult } from "@/lib/api/types";
 
 interface Props {
   result: DeploymentResult | null | undefined;
-  deploymentStatus: string;
+  deploymentStatus: Deployment["status"];
 }
 
 function MetricRow({ label, value, color }: { label: string; value: string; color?: string }) {
@@ -70,7 +70,7 @@ export function BacktestOverviewTab({ result, deploymentStatus }: Props) {
           </Text>
           <MetricRow
             label="Profit Factor"
-            value={parseFloat(m.profit_factor.toFixed(2)).toString()}
+            value={m.profit_factor.toFixed(2)}
             color={m.profit_factor >= 1 ? "green.400" : "red.400"}
           />
           <MetricRow

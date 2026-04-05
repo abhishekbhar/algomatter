@@ -13,6 +13,7 @@ import {
   TabPanel,
   SimpleGrid,
   Skeleton,
+  useToast,
 } from "@chakra-ui/react";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -57,20 +58,10 @@ export default function BacktestDetailPage() {
   const { deploymentId } = useParams<{ deploymentId: string }>();
   const router = useRouter();
   const [isPromoting, setIsPromoting] = useState(false);
+  const toast = useToast();
 
-  // Initial fetch — no polling
-  const { data: deployment, error: deploymentError } = useDeployment(
-    deploymentId,
-    { refreshInterval: 0 }
-  );
-  const isActive =
-    deployment?.status === "running" || deployment?.status === "pending";
-  // Conditional polling only when active
-  const { data: deploymentLive } = useDeployment(
-    isActive ? deploymentId : undefined,
-    { refreshInterval: 2000 }
-  );
-  const dep = deploymentLive ?? deployment;
+  const { data: dep, error: deploymentError } = useDeployment(deploymentId);
+  const isActive = dep?.status === "running" || dep?.status === "pending";
 
   const { data: result } = useDeploymentResults(deploymentId);
   const { data: paperDeployments = [], mutate: refreshPaper } =
@@ -93,6 +84,8 @@ export default function BacktestDetailPage() {
       });
       await refreshPaper();
       router.push("/paper-trading");
+    } catch {
+      toast({ title: "Failed to promote deployment", status: "error", duration: 4000, isClosable: true });
     } finally {
       setIsPromoting(false);
     }
