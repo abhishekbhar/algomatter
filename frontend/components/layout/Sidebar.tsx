@@ -15,6 +15,7 @@ import {
   MdTrendingUp,
   MdChevronLeft,
   MdChevronRight,
+  MdQueryStats,
 } from "react-icons/md";
 import { NavItem } from "./NavItem";
 
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { icon: MdWebhook, label: "Webhooks", href: "/webhooks" },
   { icon: MdAccountBalance, label: "Brokers", href: "/brokers" },
   { icon: MdPlayArrow, label: "Paper Trading", href: "/paper-trading" },
+  { icon: MdQueryStats, label: "Backtest Deployments", href: "/backtest-deployments" },
   { icon: MdHistory, label: "Backtesting", href: "/backtesting" },
   { icon: MdAnalytics, label: "Analytics", href: "/analytics" },
   { icon: MdSettings, label: "Settings", href: "/settings" },

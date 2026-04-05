@@ -22,4 +22,9 @@ describe("Sidebar", () => {
     expect(screen.getByText("Analytics")).toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
   });
+
+  it("renders Backtest Deployments nav item", () => {
+    wrap(<Sidebar />);
+    expect(screen.getByText("Backtest Deployments")).toBeInTheDocument();
+  });
 });
