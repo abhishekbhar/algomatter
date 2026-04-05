@@ -18,12 +18,24 @@ describe("SparklineChart", () => {
     const { container } = render(<SparklineChart data={[]} />);
     const svg = container.querySelector("svg");
     expect(svg).toBeInTheDocument();
-    expect(svg?.querySelector("path, line")).toBeInTheDocument();
+    expect(svg?.querySelector("line")).toBeInTheDocument();
+    expect(svg?.querySelector("path")).not.toBeInTheDocument();
   });
 
   it("renders a flat line when data is null", () => {
     const { container } = render(<SparklineChart data={null} />);
-    expect(container.querySelector("svg")).toBeInTheDocument();
+    const svg = container.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.querySelector("line")).toBeInTheDocument();
+    expect(svg?.querySelector("path")).not.toBeInTheDocument();
+  });
+
+  it("renders a flat line for single data point", () => {
+    const { container } = render(<SparklineChart data={[points[0]]} />);
+    const svg = container.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.querySelector("line")).toBeInTheDocument();
+    expect(svg?.querySelector("path")).not.toBeInTheDocument();
   });
 
   it("renders with custom width and height", () => {
