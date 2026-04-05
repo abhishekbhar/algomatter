@@ -280,8 +280,7 @@ class Exchange1Broker(BrokerAdapter):
             "quantityUnit": "cont",
             "positionModel": pos_model,
         }
-        if order.leverage:
-            body["leverage"] = str(order.leverage)
+        body["leverage"] = str(order.leverage) if order.leverage else "10"
         if order.order_type == "LIMIT" and order.price:
             body["price"] = str(order.price)
         if order.take_profit:
