@@ -14,7 +14,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
               "img-src 'self' data: blob:",
               "font-src 'self' data: https://cdn.jsdelivr.net",
-              "connect-src 'self' http://localhost:8000 http://localhost:3000 https://cdn.jsdelivr.net",
+              "connect-src 'self' http://localhost:8000 http://localhost:3000 https://cdn.jsdelivr.net https://api.binance.com wss://stream.binance.com:9443",
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",
             ].join("; "),

@@ -166,6 +166,8 @@ export function TradingChart({ symbol, price, change24h }: TradingChartProps) {
       borderRadius="md"
       overflow="hidden"
       h="100%"
+      flex="1"
+      minW={0}
       display="flex"
       flexDirection="column"
     >
