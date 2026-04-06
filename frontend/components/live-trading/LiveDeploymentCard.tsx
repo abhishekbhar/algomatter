@@ -24,7 +24,7 @@ export function LiveDeploymentCard({ deployment, position }: Props) {
       borderRadius="md"
       cursor="pointer"
       _hover={{ shadow: "md" }}
-      onClick={() => router.push(`/live-trading/${deployment.id}`)}
+      onClick={() => router.push(`/live-deployments/${deployment.id}`)}
     >
       <VStack align="stretch" spacing={2}>
         <Text fontWeight="bold" fontSize="sm" noOfLines={1}>
