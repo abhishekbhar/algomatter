@@ -1,14 +1,29 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth.deps import get_current_user, get_session, get_tenant_session
-from app.brokers.schemas import BrokerConnectionResponse, CreateBrokerConnectionRequest
+from app.brokers.schemas import (
+    BrokerConnectionResponse,
+    BrokerOrderResponse,
+    BrokerPositionResponse,
+    BrokerStatsResponse,
+    CreateBrokerConnectionRequest,
+)
 from app.crypto.encryption import encrypt_credentials
-from app.db.models import BrokerConnection, ExchangeInstrument
+from app.db.models import (
+    BrokerConnection,
+    DeploymentState,
+    DeploymentTrade,
+    ExchangeInstrument,
+    StrategyDeployment,
+)
+from app.deployments.schemas import DeploymentTradeResponse, TradesResponse
+from app.deployments.router import _trade_to_response
 
 router = APIRouter(prefix="/api/v1/brokers", tags=["brokers"])
 
@@ -122,3 +137,223 @@ async def list_instruments(
         )
         for i in instruments
     ]
+
+
+def _get_broker_or_404(connection_id, tenant_id):
+    """Returns a select() for the broker — call scalar_one_or_none() and raise 404 if None."""
+    return (
+        select(BrokerConnection)
+        .where(
+            BrokerConnection.id == connection_id,
+            BrokerConnection.tenant_id == tenant_id,
+        )
+    )
+
+
+@router.get("/{connection_id}/stats", response_model=BrokerStatsResponse)
+async def get_broker_stats(
+    connection_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    conn = await session.scalar(_get_broker_or_404(connection_id, tenant_id))
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker connection not found")
+
+    # Active deployments
+    active = await session.scalar(
+        select(func.count(StrategyDeployment.id)).where(
+            StrategyDeployment.broker_connection_id == connection_id,
+            StrategyDeployment.tenant_id == tenant_id,
+            StrategyDeployment.mode == "live",
+            StrategyDeployment.status == "running",
+        )
+    ) or 0
+
+    # Deployment IDs for this broker
+    dep_id_rows = await session.execute(
+        select(StrategyDeployment.id).where(
+            StrategyDeployment.broker_connection_id == connection_id,
+            StrategyDeployment.tenant_id == tenant_id,
+        )
+    )
+    dep_ids = [r[0] for r in dep_id_rows.all()]
+
+    if not dep_ids:
+        return BrokerStatsResponse(active_deployments=active, total_realized_pnl=0.0, win_rate=0.0, total_trades=0)
+
+    # Trade stats — only filled trades
+    trades_result = await session.execute(
+        select(DeploymentTrade.realized_pnl).where(
+            DeploymentTrade.deployment_id.in_(dep_ids),
+            DeploymentTrade.status == "filled",
+        )
+    )
+    pnl_values = [float(row[0]) for row in trades_result.all() if row[0] is not None]
+    total_trades_result = await session.scalar(
+        select(func.count(DeploymentTrade.id)).where(
+            DeploymentTrade.deployment_id.in_(dep_ids),
+            DeploymentTrade.status == "filled",
+        )
+    ) or 0
+
+    total_pnl = sum(pnl_values)
+    winning = sum(1 for p in pnl_values if p > 0)
+    win_rate = (winning / len(pnl_values)) if pnl_values else 0.0
+
+    return BrokerStatsResponse(
+        active_deployments=active,
+        total_realized_pnl=round(total_pnl, 4),
+        win_rate=round(win_rate, 4),
+        total_trades=total_trades_result,
+    )
+
+
+@router.get("/{connection_id}/positions", response_model=list[BrokerPositionResponse])
+async def get_broker_positions(
+    connection_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    conn = await session.scalar(_get_broker_or_404(connection_id, tenant_id))
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker connection not found")
+
+    deps_result = await session.execute(
+        select(StrategyDeployment)
+        .where(
+            StrategyDeployment.broker_connection_id == connection_id,
+            StrategyDeployment.tenant_id == tenant_id,
+            StrategyDeployment.mode == "live",
+            StrategyDeployment.status == "running",
+        )
+        .options(
+            selectinload(StrategyDeployment.strategy_code),
+            selectinload(StrategyDeployment.state),
+        )
+    )
+    deps = deps_result.scalars().all()
+
+    positions = []
+    for dep in deps:
+        if dep.state is None or dep.state.position is None:
+            continue
+        pos = dep.state.position
+        qty = float(pos.get("quantity", 0))
+        if qty == 0:
+            continue
+        positions.append(
+            BrokerPositionResponse(
+                deployment_id=str(dep.id),
+                deployment_name=dep.strategy_code.name if dep.strategy_code else "",
+                symbol=dep.symbol,
+                side="LONG" if qty > 0 else "SHORT",
+                quantity=abs(qty),
+                avg_entry_price=float(pos.get("avg_entry_price", 0)),
+                unrealized_pnl=float(pos.get("unrealized_pnl", 0)),
+            )
+        )
+    return positions
+
+
+@router.get("/{connection_id}/orders", response_model=list[BrokerOrderResponse])
+async def get_broker_orders(
+    connection_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    conn = await session.scalar(_get_broker_or_404(connection_id, tenant_id))
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker connection not found")
+
+    deps_result = await session.execute(
+        select(StrategyDeployment)
+        .where(
+            StrategyDeployment.broker_connection_id == connection_id,
+            StrategyDeployment.tenant_id == tenant_id,
+            StrategyDeployment.mode == "live",
+            StrategyDeployment.status == "running",
+        )
+        .options(
+            selectinload(StrategyDeployment.strategy_code),
+            selectinload(StrategyDeployment.state),
+        )
+    )
+    deps = deps_result.scalars().all()
+
+    orders = []
+    for dep in deps:
+        if dep.state is None:
+            continue
+        dep_name = dep.strategy_code.name if dep.strategy_code else ""
+        for order in (dep.state.open_orders or []):
+            orders.append(
+                BrokerOrderResponse(
+                    order_id=str(order.get("id", "")),
+                    deployment_id=str(dep.id),
+                    deployment_name=dep_name,
+                    symbol=dep.symbol,
+                    action=str(order.get("action", "")),
+                    quantity=float(order.get("quantity", 0)),
+                    order_type=str(order.get("order_type", "MARKET")),
+                    price=float(order["price"]) if order.get("price") is not None else None,
+                    created_at=order.get("created_at"),
+                )
+            )
+    return orders
+
+
+@router.get("/{connection_id}/trades", response_model=TradesResponse)
+async def get_broker_trades(
+    connection_id: uuid.UUID,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    conn = await session.scalar(_get_broker_or_404(connection_id, tenant_id))
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker connection not found")
+
+    dep_id_rows = await session.execute(
+        select(StrategyDeployment.id).where(
+            StrategyDeployment.broker_connection_id == connection_id,
+            StrategyDeployment.tenant_id == tenant_id,
+        )
+    )
+    dep_ids = [r[0] for r in dep_id_rows.all()]
+
+    if not dep_ids:
+        return TradesResponse(trades=[], total=0, offset=offset, limit=limit)
+
+    base_q = select(DeploymentTrade).where(DeploymentTrade.deployment_id.in_(dep_ids))
+    total = await session.scalar(select(func.count()).select_from(base_q.subquery())) or 0
+
+    trades_result = await session.execute(
+        base_q
+        .order_by(DeploymentTrade.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .options(
+            selectinload(DeploymentTrade.deployment).selectinload(StrategyDeployment.strategy_code)
+        )
+    )
+    trades = trades_result.scalars().all()
+
+    return TradesResponse(
+        trades=[
+            _trade_to_response(
+                t,
+                t.deployment.strategy_code.name if t.deployment and t.deployment.strategy_code else "",
+                t.deployment.symbol if t.deployment else "",
+            )
+            for t in trades
+        ],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
