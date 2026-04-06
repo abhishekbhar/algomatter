@@ -72,6 +72,8 @@ class ManualOrderRequest(BaseModel):
     order_type: str = "market"
     price: float | None = None
     trigger_price: float | None = None
+    take_profit: float | None = None
+    stop_loss: float | None = None
 
 
 class CancelOrderRequest(BaseModel):

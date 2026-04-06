@@ -1218,39 +1218,47 @@ async def place_manual_order(
         trade.fill_quantity = body.quantity
         trade.filled_at = datetime.now(UTC)
     elif dep.mode == "live":
-        # Handle broker dispatch directly (NOT via dispatch_orders to avoid duplicate trade)
-        translated = translate_order(
-            {"action": body.action, "quantity": body.quantity, "order_type": body.order_type,
-             "price": body.price, "trigger_price": body.trigger_price},
-            dep,
-        )
-        if translated is None:
-            trade.status = "rejected"
-        else:
-            try:
-                from app.crypto.encryption import decrypt_credentials
-                from app.brokers.factory import get_broker
-                from app.db.models import BrokerConnection
+        # Build OrderRequest directly (NOT via translate_order — it drops TP/SL)
+        from app.brokers.base import OrderRequest as BrokerOrderRequest
+        from decimal import Decimal
 
-                bc = await session.get(BrokerConnection, dep.broker_connection_id)
-                if not bc:
-                    trade.status = "rejected"
-                else:
-                    credentials = decrypt_credentials(bc.tenant_id, bc.credentials)
-                    broker = await get_broker(bc.broker_type, credentials)
-                    try:
-                        broker_result = await broker.place_order(translated)
-                        trade.fill_price = broker_result.get("fill_price")
-                        trade.fill_quantity = broker_result.get("fill_quantity")
-                        trade.broker_order_id = broker_result.get("order_id")
-                        trade.status = "filled"
-                        trade.filled_at = datetime.now(UTC)
-                    finally:
-                        await broker.close()
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).error(f"Failed to dispatch manual order: {e}")
-                trade.status = "failed"
+        order_req = BrokerOrderRequest(
+            symbol=dep.symbol,
+            exchange=dep.exchange,
+            product_type=dep.product_type,
+            action=body.action.upper(),
+            quantity=Decimal(str(body.quantity)),
+            order_type=order_type_mapped,
+            price=Decimal(str(body.price)) if body.price is not None else Decimal("0"),
+            trigger_price=Decimal(str(body.trigger_price)) if body.trigger_price is not None else None,
+            take_profit=Decimal(str(body.take_profit)) if body.take_profit is not None else None,
+            stop_loss=Decimal(str(body.stop_loss)) if body.stop_loss is not None else None,
+        )
+
+        try:
+            from app.crypto.encryption import decrypt_credentials
+            from app.brokers.factory import get_broker
+            from app.db.models import BrokerConnection
+
+            bc = await session.get(BrokerConnection, dep.broker_connection_id)
+            if not bc:
+                trade.status = "rejected"
+            else:
+                credentials = decrypt_credentials(bc.tenant_id, bc.credentials)
+                broker = await get_broker(bc.broker_type, credentials)
+                try:
+                    broker_result = await broker.place_order(order_req)
+                    trade.fill_price = float(broker_result.fill_price) if broker_result.fill_price is not None else None
+                    trade.fill_quantity = float(broker_result.fill_quantity) if broker_result.fill_quantity is not None else None
+                    trade.broker_order_id = broker_result.order_id
+                    trade.status = "filled"
+                    trade.filled_at = datetime.now(UTC)
+                finally:
+                    await broker.close()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to dispatch manual order: {e}")
+            trade.status = "failed"
 
     session.add(trade)
     await session.commit()
