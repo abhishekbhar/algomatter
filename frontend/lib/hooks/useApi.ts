@@ -30,6 +30,9 @@ import type {
   ComparisonData,
   OhlcvCandle,
   ExchangeInstrument,
+  BrokerStats,
+  BrokerPosition,
+  BrokerOrder,
 } from "@/lib/api/types";
 
 function fetcher<T>(path: string): Promise<T> {
@@ -263,4 +266,31 @@ export function useDeploymentMetrics(id: string | undefined) {
 
 export function useDeploymentComparison(id: string | undefined) {
   return useApiGet<ComparisonData | null>(id ? `/api/v1/deployments/${id}/comparison` : null);
+}
+
+export function useBrokerStats(id: string | undefined) {
+  return useApiGet<BrokerStats>(
+    id ? `/api/v1/brokers/${id}/stats` : null,
+    { refreshInterval: 30000 }
+  );
+}
+
+export function useBrokerPositions(id: string | undefined) {
+  return useApiGet<BrokerPosition[]>(
+    id ? `/api/v1/brokers/${id}/positions` : null,
+    { refreshInterval: 5000 }
+  );
+}
+
+export function useBrokerOrders(id: string | undefined) {
+  return useApiGet<BrokerOrder[]>(
+    id ? `/api/v1/brokers/${id}/orders` : null,
+    { refreshInterval: 5000 }
+  );
+}
+
+export function useBrokerTrades(id: string | undefined, offset = 0, limit = 50) {
+  return useApiGet<TradesResponse>(
+    id ? `/api/v1/brokers/${id}/trades?offset=${offset}&limit=${limit}` : null
+  );
 }

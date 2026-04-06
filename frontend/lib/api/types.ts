@@ -325,3 +325,33 @@ export interface TradeMarker {
   price: number;
   action: "BUY" | "SELL";
 }
+
+// Broker Detail
+export interface BrokerStats {
+  active_deployments: number;
+  total_realized_pnl: number;
+  win_rate: number;
+  total_trades: number;
+}
+
+export interface BrokerPosition {
+  deployment_id: string;
+  deployment_name: string;
+  symbol: string;
+  side: "LONG" | "SHORT";
+  quantity: number;
+  avg_entry_price: number;
+  unrealized_pnl: number;
+}
+
+export interface BrokerOrder {
+  order_id: string;
+  deployment_id: string;
+  deployment_name: string;
+  symbol: string;
+  action: string;
+  quantity: number;
+  order_type: string;
+  price: number | null;
+  created_at: string | null;
+}
