@@ -294,3 +294,10 @@ export function useBrokerTrades(id: string | undefined, offset = 0, limit = 50) 
     id ? `/api/v1/brokers/${id}/trades?offset=${offset}&limit=${limit}` : null
   );
 }
+
+export function useBrokerBalance(brokerConnectionId: string | null) {
+  return useApiGet<{ available: number; total: number }>(
+    brokerConnectionId ? `/api/v1/brokers/${brokerConnectionId}/balance` : null,
+    { refreshInterval: 10000 },
+  );
+}

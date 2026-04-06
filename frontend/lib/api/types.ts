@@ -355,3 +355,40 @@ export interface BrokerOrder {
   price: number | null;
   created_at: string | null;
 }
+
+// Manual Trading
+export interface ManualTrade {
+  id: string;
+  broker_connection_id: string;
+  symbol: string;
+  exchange: string;
+  product_type: string;
+  action: string;
+  quantity: number;
+  order_type: string;
+  price: number | null;
+  trigger_price: number | null;
+  leverage: number | null;
+  position_model: string | null;
+  take_profit: number | null;
+  stop_loss: number | null;
+  fill_price: number | null;
+  fill_quantity: number | null;
+  status: string;
+  broker_order_id: string | null;
+  created_at: string;
+  updated_at: string;
+  filled_at: string | null;
+}
+
+export interface ManualTradesListResponse {
+  trades: ManualTrade[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface BrokerBalance {
+  available: number;
+  total: number;
+}
