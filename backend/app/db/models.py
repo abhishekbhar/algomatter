@@ -6,6 +6,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -423,3 +424,32 @@ class DeploymentTrade(Base):
     )
 
     deployment: Mapped["StrategyDeployment"] = relationship(back_populates="trades")
+
+
+class ManualTrade(Base):
+    """Standalone manual trade — not tied to any deployment."""
+    __tablename__ = "manual_trades"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    broker_connection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("broker_connections.id"), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(32), nullable=False)
+    product_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    action: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    order_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trigger_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    leverage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    position_model: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fill_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fill_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="submitted")
+    broker_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    broker_symbol: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
