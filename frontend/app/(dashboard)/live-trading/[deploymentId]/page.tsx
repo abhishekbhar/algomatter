@@ -179,6 +179,8 @@ export default function DeploymentDetailPage() {
         onClose={orderModal.onClose}
         deploymentId={deploymentId}
         onOrderPlaced={refreshPosition}
+        currentPrice={ohlcv?.length ? ohlcv[ohlcv.length - 1].close : null}
+        availableBalance={position?.portfolio?.available_margin ?? null}
       />
     </Box>
   );
