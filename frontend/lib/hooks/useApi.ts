@@ -295,9 +295,19 @@ export function useBrokerTrades(id: string | undefined, offset = 0, limit = 50) 
   );
 }
 
-export function useBrokerBalance(brokerConnectionId: string | null) {
+export function useBrokerBalance(brokerConnectionId: string | null, productType?: string) {
+  const params = productType ? `?product_type=${productType}` : "";
   return useApiGet<{ available: number; total: number }>(
-    brokerConnectionId ? `/api/v1/brokers/${brokerConnectionId}/balance` : null,
+    brokerConnectionId ? `/api/v1/brokers/${brokerConnectionId}/balance${params}` : null,
     { refreshInterval: 10000 },
+  );
+}
+
+export function useBrokerQuote(brokerConnectionId: string | null, symbol: string | null) {
+  return useApiGet<{ symbol: string; last_price: number; bid: number | null; ask: number | null }>(
+    brokerConnectionId && symbol
+      ? `/api/v1/brokers/${brokerConnectionId}/quote?symbol=${encodeURIComponent(symbol)}`
+      : null,
+    { refreshInterval: 5000 },
   );
 }

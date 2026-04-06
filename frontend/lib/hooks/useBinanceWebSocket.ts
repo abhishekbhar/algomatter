@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { apiClient } from "@/lib/api/client";
 
 export interface TickerData {
   symbol: string;
@@ -211,10 +212,9 @@ export async function fetchBinanceKlines(
   interval: string,
   limit = 500,
 ): Promise<KlineData[]> {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Binance API error: ${res.status}`);
-  const data: unknown[][] = await res.json();
+  const data: unknown[][] = await apiClient(
+    `/api/v1/brokers/market/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}`,
+  );
   return data.map((k) => ({
     time: k[0] as number,
     open: parseFloat(k[1] as string),

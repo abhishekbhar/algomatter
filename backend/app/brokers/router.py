@@ -1,5 +1,6 @@
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -142,6 +143,23 @@ async def list_instruments(
     ]
 
 
+@router.get("/market/klines")
+async def proxy_binance_klines(
+    symbol: str,
+    interval: str = "15m",
+    limit: int = 500,
+    current_user: dict = Depends(get_current_user),
+):
+    """Proxy Binance klines API to avoid geo-blocking in the browser."""
+    url = "https://api.binance.com/api/v3/klines"
+    params = {"symbol": symbol, "interval": interval, "limit": min(limit, 1000)}
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(url, params=params)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail="Binance API error")
+        return resp.json()
+
+
 def _get_broker_or_404(connection_id, tenant_id):
     """Returns a select() for the broker — call scalar_one_or_none() and raise 404 if None."""
     return (
@@ -156,6 +174,7 @@ def _get_broker_or_404(connection_id, tenant_id):
 @router.get("/{broker_connection_id}/balance", response_model=BrokerBalanceResponse)
 async def get_broker_balance(
     broker_connection_id: uuid.UUID,
+    product_type: str | None = None,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -170,11 +189,41 @@ async def get_broker_balance(
     credentials = decrypt_credentials(conn.tenant_id, conn.credentials)
     broker = await get_broker(conn.broker_type, credentials)
     try:
-        balance = await broker.get_balance()
+        balance = await broker.get_balance(product_type=product_type)
         return BrokerBalanceResponse(
             available=float(balance.available),
             total=float(balance.total),
         )
+    finally:
+        await broker.close()
+
+
+@router.get("/{broker_connection_id}/quote")
+async def get_broker_quote(
+    broker_connection_id: uuid.UUID,
+    symbol: str,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    """Get a price quote for a symbol from the broker's own market data."""
+    tenant_id = uuid.UUID(current_user["user_id"])
+    conn = await session.scalar(_get_broker_or_404(broker_connection_id, tenant_id))
+    if not conn:
+        raise HTTPException(status_code=404, detail="Broker connection not found")
+
+    credentials = decrypt_credentials(conn.tenant_id, conn.credentials)
+    broker = await get_broker(conn.broker_type, credentials)
+    try:
+        quotes = await broker.get_quotes([symbol])
+        if not quotes:
+            raise HTTPException(status_code=404, detail="No quote available")
+        q = quotes[0]
+        return {
+            "symbol": q.symbol,
+            "last_price": float(q.last_price),
+            "bid": float(q.bid) if q.bid else None,
+            "ask": float(q.ask) if q.ask else None,
+        }
     finally:
         await broker.close()
 

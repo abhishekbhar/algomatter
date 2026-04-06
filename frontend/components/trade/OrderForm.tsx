@@ -6,7 +6,7 @@ import {
   Text, useColorModeValue, useToast,
 } from "@chakra-ui/react";
 import { apiClient } from "@/lib/api/client";
-import { useBrokers, useBrokerBalance } from "@/lib/hooks/useApi";
+import { useBrokers, useBrokerBalance, useBrokerQuote } from "@/lib/hooks/useApi";
 import { getBrokerCaps } from "@/components/trade/BrokerCapabilities";
 
 interface Props {
@@ -33,9 +33,13 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
   const [positionModel, setPositionModel] = useState("isolated");
   const [loading, setLoading] = useState(false);
 
-  const { data: balance } = useBrokerBalance(selectedBrokerId || null);
+  const { data: balance } = useBrokerBalance(selectedBrokerId || null, productType);
+  const { data: brokerQuote } = useBrokerQuote(selectedBrokerId || null, symbol);
   const selectedBroker = brokerConnections?.find((b) => String(b.id) === selectedBrokerId);
   const caps = selectedBroker ? getBrokerCaps(selectedBroker.broker_type) : null;
+
+  // Use broker's own price when available, fall back to Binance ticker price
+  const effectiveCurrentPrice = brokerQuote?.last_price ?? currentPrice;
 
   const bg = useColorModeValue("white", "gray.800");
   const inputBg = useColorModeValue("gray.50", "gray.700");
@@ -43,19 +47,19 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
 
   const handlePriceSliderChange = (val: number) => {
     setPriceSliderPct(val);
-    if (currentPrice) {
-      const min = currentPrice * 0.95;
-      const max = currentPrice * 1.05;
+    if (effectiveCurrentPrice) {
+      const min = effectiveCurrentPrice * 0.95;
+      const max = effectiveCurrentPrice * 1.05;
       setPrice((min + (max - min) * (val / 100)).toFixed(2));
     }
   };
 
   const handleQuantityPctChange = (val: number) => {
     setQuantityPct(val);
-    if (balance && currentPrice) {
-      const effectivePrice = price ? parseFloat(price) : currentPrice;
-      if (effectivePrice > 0) {
-        const maxQty = balance.available / effectivePrice;
+    if (balance && effectiveCurrentPrice) {
+      const ep = price ? parseFloat(price) : effectiveCurrentPrice;
+      if (ep > 0) {
+        const maxQty = balance.available / ep;
         setQuantity((maxQty * (val / 100)).toFixed(6));
       }
     }
@@ -99,6 +103,7 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
   const isLimitLike = orderType === "LIMIT" || orderType === "SL";
   const actionLabel = productType === "FUTURES" ? (action === "BUY" ? "Long" : "Short") : action;
   const submitLabel = `${actionLabel} ${symbol}${productType === "FUTURES" && leverage > 1 ? ` ${leverage}x` : ""}`;
+  const balancePrefix = caps?.currencySymbol || "";
 
   return (
     <Box w="280px" bg={bg} borderLeft="1px" borderColor={borderColor} overflowY="auto" flexShrink={0} p={3}>
@@ -113,6 +118,14 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
           {(brokerConnections ?? []).map((b) => (<option key={String(b.id)} value={String(b.id)}>{b.broker_type} — {String(b.id).slice(0, 8)}</option>))}
         </Select>
       </FormControl>
+
+      {/* Show broker price when available */}
+      {brokerQuote && (
+        <Flex justify="space-between" mb={3} px={1} fontSize="xs">
+          <Text color="gray.500">Broker Price</Text>
+          <Text fontWeight="semibold">{balancePrefix}{brokerQuote.last_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text>
+        </Flex>
+      )}
 
       <Flex gap={2} mb={3}>
         <Button flex={1} size="sm" colorScheme={action === "BUY" ? "green" : "gray"} variant={action === "BUY" ? "solid" : "outline"} onClick={() => setAction("BUY")}>{productType === "FUTURES" ? "Long" : "Buy"}</Button>
@@ -150,7 +163,7 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
       {isLimitLike && (
         <FormControl mb={3}>
           <FormLabel fontSize="xs" color="gray.500">PRICE</FormLabel>
-          <Input size="sm" type="number" bg={inputBg} value={price} onChange={(e) => setPrice(e.target.value)} placeholder={currentPrice?.toFixed(2) ?? ""} />
+          <Input size="sm" type="number" bg={inputBg} value={price} onChange={(e) => setPrice(e.target.value)} placeholder={effectiveCurrentPrice?.toFixed(2) ?? ""} />
           <Slider mt={1} min={0} max={100} value={priceSliderPct} onChange={handlePriceSliderChange} size="sm"><SliderTrack><SliderFilledTrack /></SliderTrack><SliderThumb /></Slider>
           <Flex justify="space-between" fontSize="2xs" color="gray.500"><Text>-5%</Text><Text>+5%</Text></Flex>
         </FormControl>
@@ -175,20 +188,20 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
         <FormControl flex={1}><FormLabel fontSize="xs" color="gray.500">STOP LOSS</FormLabel><Input size="sm" type="number" bg={inputBg} placeholder="Optional" value={stopLoss} onChange={(e) => setStopLoss(e.target.value)} /></FormControl>
       </Flex>
 
-      {productType === "FUTURES" && currentPrice && quantity ? (
+      {productType === "FUTURES" && effectiveCurrentPrice && quantity ? (
         <Box borderTop="1px" borderColor={borderColor} py={2} mb={2} fontSize="xs">
-          <Flex justify="space-between"><Text color="gray.500">Required Margin</Text><Text color="yellow.400">{((parseFloat(quantity) * (parseFloat(price) || currentPrice)) / leverage).toFixed(2)} USDT</Text></Flex>
+          <Flex justify="space-between"><Text color="gray.500">Required Margin</Text><Text color="yellow.400">{balancePrefix}{((parseFloat(quantity) * (parseFloat(price) || effectiveCurrentPrice)) / leverage).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text></Flex>
         </Box>
       ) : null}
 
-      {currentPrice && quantity ? (
+      {effectiveCurrentPrice && quantity ? (
         <Flex justify="space-between" borderTop="1px" borderColor={borderColor} py={2} mb={3} fontSize="xs">
-          <Text color="gray.500">Total</Text><Text fontWeight="semibold">{(parseFloat(quantity) * (parseFloat(price) || currentPrice)).toFixed(2)} USDT</Text>
+          <Text color="gray.500">Total</Text><Text fontWeight="semibold">{balancePrefix}{(parseFloat(quantity) * (parseFloat(price) || effectiveCurrentPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text>
         </Flex>
       ) : null}
 
       <Button w="100%" colorScheme={action === "BUY" ? "green" : "red"} onClick={handleSubmit} isLoading={loading} isDisabled={!selectedBrokerId || !quantity}>{submitLabel}</Button>
-      {balance && (<Text textAlign="center" mt={2} fontSize="xs" color="gray.500">Available: {balance.available.toLocaleString()} USDT</Text>)}
+      {balance && (<Text textAlign="center" mt={2} fontSize="xs" color="gray.500">Available: {balancePrefix}{balance.available.toLocaleString()} {caps?.currency ?? "USDT"}</Text>)}
     </Box>
   );
 }

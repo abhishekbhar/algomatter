@@ -432,15 +432,39 @@ class Exchange1Broker(BrokerAdapter):
         self._account_cache = (now, flat)
         return flat
 
-    async def get_balance(self) -> AccountBalance:
-        """Return available balance.
+    async def get_balance(self, product_type: str | None = None) -> AccountBalance:
+        """Return available balance filtered by product type.
 
-        Priority:
-        1. First cfd entry with non-zero available margin.
-        2. First asset entry with non-zero available balance.
-        3. Spot USDT balance.
+        If *product_type* is ``"FUTURES"`` → return CFD balance.
+        If *product_type* is ``"SPOT"`` → return spot INR balance.
+        If *product_type* is ``None`` (default) → use legacy priority:
+          1. First cfd entry with non-zero available margin.
+          2. First asset entry with non-zero available balance.
+          3. Spot USDT balance.
         """
         accounts = await self._get_balance_data()
+
+        if product_type == "FUTURES":
+            for acc in accounts:
+                if acc.get("account_type") == "cfd":
+                    return AccountBalance(
+                        available=Decimal(str(acc.get("available_margin", "0"))),
+                        used_margin=Decimal(str(acc.get("hold", "0"))),
+                        total=Decimal(str(acc.get("total", "0"))),
+                    )
+            return AccountBalance(available=Decimal("0"), used_margin=Decimal("0"), total=Decimal("0"))
+
+        if product_type == "SPOT":
+            for acc in accounts:
+                if acc.get("account_type") == "asset" and acc.get("currency") == "INR":
+                    return AccountBalance(
+                        available=Decimal(str(acc.get("available", "0"))),
+                        used_margin=Decimal(str(acc.get("hold", "0"))),
+                        total=Decimal(str(acc.get("total", "0"))),
+                    )
+            return AccountBalance(available=Decimal("0"), used_margin=Decimal("0"), total=Decimal("0"))
+
+        # Legacy priority when no product_type specified
         # 1. cfd with funds
         for acc in accounts:
             if acc.get("account_type") == "cfd" and Decimal(str(acc.get("available_margin", "0"))) > 0:
@@ -539,34 +563,99 @@ class Exchange1Broker(BrokerAdapter):
             )
         return holdings
 
+    @staticmethod
+    def _strip_quote(symbol: str) -> str:
+        """Extract base asset from a Binance-style symbol.
+
+        BTCUSDT → btc, ETHUSDT → eth, SOLUSDT → sol, etc.
+        """
+        s = symbol.upper()
+        for quote in ("USDT", "USDC", "USD"):
+            if s.endswith(quote) and len(s) > len(quote):
+                return s[: -len(quote)].lower()
+        return s.lower()
+
+    async def _get_usdt_inr_rate(self) -> Decimal:
+        """Derive USDT/INR rate from BTCINR and BTCUSDT orderbooks."""
+        try:
+            inr_data = await self._get(
+                "/openapi/v1/spot/orderbook",
+                params={"symbol": "btcinr"},
+                signed=True,
+            )
+            usdt_data = await self._get(
+                "/openapi/v1/spot/orderbook",
+                params={"symbol": "btcusdt"},
+                signed=True,
+            )
+            inr_book = inr_data.get("data", inr_data)
+            usdt_book = usdt_data.get("data", usdt_data)
+            inr_mid = (Decimal(str(inr_book["asks"][0][0])) + Decimal(str(inr_book["bids"][0][0]))) / 2
+            usdt_mid = (Decimal(str(usdt_book["asks"][0][0])) + Decimal(str(usdt_book["bids"][0][0]))) / 2
+            if usdt_mid > 0:
+                return inr_mid / usdt_mid
+        except (RuntimeError, KeyError, IndexError):
+            pass
+        return Decimal("93")  # fallback
+
     async def get_quotes(self, symbols: list[str]) -> list[Quote]:
-        """Fetch orderbook for each symbol and return best bid/ask with mid price."""
+        """Fetch price quotes in INR for the given symbols.
+
+        Strategy: try ``<base>inr`` orderbook first.  If the INR pair doesn't
+        exist, fall back to ``<base>usdt`` and multiply by the live USDT/INR
+        rate (derived from BTCINR / BTCUSDT).
+        """
         quotes: list[Quote] = []
+        usdt_inr_rate: Decimal | None = None
+
         for symbol in symbols:
+            base = self._strip_quote(symbol)
+
+            # 1. Try INR pair
+            inr_sym = f"{base}inr"
             try:
                 data = await self._get(
                     "/openapi/v1/spot/orderbook",
-                    params={"symbol": symbol.lower()},
+                    params={"symbol": inr_sym},
+                    signed=True,
                 )
+                book = data.get("data", data)
+                asks = book.get("asks", [])
+                bids = book.get("bids", [])
+                if asks and bids:
+                    best_ask = Decimal(str(asks[0][0]))
+                    best_bid = Decimal(str(bids[0][0]))
+                    mid_price = (best_ask + best_bid) / 2
+                    quotes.append(
+                        Quote(symbol=symbol, exchange="EXCHANGE1", last_price=mid_price, bid=best_bid, ask=best_ask)
+                    )
+                    continue
+            except RuntimeError:
+                pass
+
+            # 2. Fall back to USDT pair × USDT/INR rate
+            usdt_sym = f"{base}usdt"
+            try:
+                data = await self._get(
+                    "/openapi/v1/spot/orderbook",
+                    params={"symbol": usdt_sym},
+                    signed=True,
+                )
+                book = data.get("data", data)
+                asks = book.get("asks", [])
+                bids = book.get("bids", [])
+                if asks and bids:
+                    if usdt_inr_rate is None:
+                        usdt_inr_rate = await self._get_usdt_inr_rate()
+                    best_ask = Decimal(str(asks[0][0])) * usdt_inr_rate
+                    best_bid = Decimal(str(bids[0][0])) * usdt_inr_rate
+                    mid_price = (best_ask + best_bid) / 2
+                    quotes.append(
+                        Quote(symbol=symbol, exchange="EXCHANGE1", last_price=mid_price, bid=best_bid, ask=best_ask)
+                    )
             except RuntimeError:
                 continue
-            book = data.get("data", data)
-            asks = book.get("asks", [])
-            bids = book.get("bids", [])
-            if not asks or not bids:
-                continue
-            best_ask = Decimal(str(asks[0][0]))
-            best_bid = Decimal(str(bids[0][0]))
-            mid_price = (best_ask + best_bid) / 2
-            quotes.append(
-                Quote(
-                    symbol=symbol,
-                    exchange="EXCHANGE1",
-                    last_price=mid_price,
-                    bid=best_bid,
-                    ask=best_ask,
-                )
-            )
+
         return quotes
 
     async def get_historical(

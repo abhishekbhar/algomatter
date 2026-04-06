@@ -370,7 +370,7 @@ class BinanceTestnetBroker(BrokerAdapter):
             )
         return holdings
 
-    async def get_balance(self) -> AccountBalance:
+    async def get_balance(self, product_type: str | None = None) -> AccountBalance:
         """Return balance summing only USDT and USDC assets."""
         data = await self._get_account_info()
         available = Decimal("0")

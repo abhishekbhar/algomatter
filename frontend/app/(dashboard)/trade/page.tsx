@@ -34,11 +34,7 @@ export default function TradePage() {
         />
 
         {/* Center: Chart */}
-        <TradingChart
-          symbol={symbol}
-          price={currentTicker?.price}
-          change24h={currentTicker?.change24h}
-        />
+        <TradingChart symbol={symbol} />
 
         {/* Right: Order Form */}
         <OrderForm

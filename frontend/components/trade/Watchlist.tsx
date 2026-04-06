@@ -6,15 +6,28 @@ import {
   type TickerData,
 } from "@/lib/hooks/useBinanceWebSocket";
 
-const DEFAULT_SYMBOLS = [
-  "BTCUSDT",
-  "ETHUSDT",
-  "SOLUSDT",
-  "XRPUSDT",
-  "BNBUSDT",
-  "ADAUSDT",
-  "DOGEUSDT",
+// All Exchange1 supported assets as Binance USDT pairs
+const ALL_SYMBOLS = [
+  "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT", "ADAUSDT", "DOGEUSDT",
+  "LTCUSDT", "LINKUSDT", "DOTUSDT", "AVAXUSDT", "SHIBUSDT", "UNIUSDT", "TRXUSDT",
+  "FILUSDT", "BCHUSDT", "ATOMUSDT", "PEPEUSDT", "ARBUSDT", "OPUSDT",
+  "AAVEUSDT", "MKRUSDT", "APTUSDT", "SUIUSDT", "NEARUSDT", "ICPUSDT",
+  "ETCUSDT", "XLMUSDT", "HBARUSDT", "INJUSDT", "FETUSDT", "ONDOUSDT",
+  "TONUSDT", "FTMUSDT", "RENDERUSDT", "FLOKIUSDT", "TIAUSDT", "SEIUSDT",
+  "STXUSDT", "OMUSDT", "LDOUSDT", "GRTUSDT", "APEUSDT", "CRVUSDT",
+  "DYDXUSDT", "ENSINDT", "FLOWUSDT", "XTZUSDT", "ALGOUSDT", "CHZUSDT",
+  "SANDUSDT", "THETAUSDT", "IMXUSDT", "MASKUSDT", "ENJUSDT",
+  "POLUSDT", "EOSUSDT", "BONKUSDT", "JUPUSDT", "WIFUSDT",
+  "CELOUSDT", "PYTHUSDT", "ARKMUSDT", "AXSUSDT", "BLURUSDT",
+  "WLDUSDT", "ORDIUSDT", "MEMEUSDT", "GMTUSDT", "LPTUSDT",
+  "AEVOUSDT", "BOMEUSDT", "COREUSDT", "DOGSUSDT", "ETHFIUSDT",
+  "METEUSDT", "MEWUSDT", "NOTUSDT", "OKBUSDT", "PEOPLEUSD",
+  "SATSUSDT", "SLPUSDT", "BSVUSDT", "ZKUSDT", "ZROUSDT",
+  "ZETAUSDT", "AUCTIONUSDT", "BIGTIMEUSDT", "UXLINKUSDT",
 ];
+
+// Top assets shown by default before search
+const TOP_SYMBOLS = ALL_SYMBOLS.slice(0, 20);
 
 interface WatchlistProps {
   activeSymbol: string;
@@ -48,12 +61,13 @@ export function Watchlist({
     forceUpdate();
   }, []);
 
-  const { connected } = useBinanceTickerStream(DEFAULT_SYMBOLS, handleTicker);
+  // Only subscribe to top symbols for live tickers (Binance WS limit)
+  const { connected } = useBinanceTickerStream(TOP_SYMBOLS, handleTicker);
 
   const filteredSymbols = useMemo(() => {
-    if (!search.trim()) return DEFAULT_SYMBOLS;
+    if (!search.trim()) return TOP_SYMBOLS;
     const q = search.toUpperCase();
-    return DEFAULT_SYMBOLS.filter((s) => s.includes(q));
+    return ALL_SYMBOLS.filter((s) => s.includes(q));
   }, [search]);
 
   return (

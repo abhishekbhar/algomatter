@@ -191,7 +191,7 @@ class SimulatedBroker(BrokerAdapter):
             if p.product_type in ("DELIVERY", "CNC") and p.closed_at is None
         ]
 
-    async def get_balance(self) -> AccountBalance:
+    async def get_balance(self, product_type: str | None = None) -> AccountBalance:
         return AccountBalance(
             available=self._balance,
             used_margin=self._used_margin,
