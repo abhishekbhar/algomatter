@@ -302,7 +302,7 @@ export default function StrategyEditorPage() {
                     <Input type="date" value={deployEndDate} onChange={(e) => setDeployEndDate(e.target.value)} />
                   </FormControl>
                   <FormControl>
-                    <FormLabel>Initial Capital ($)</FormLabel>
+                    <FormLabel>Initial Capital (₹)</FormLabel>
                     <NumberInput min={100} value={deployCapital} onChange={(_, val) => setDeployCapital(val || 10000)}>
                       <NumberInputField />
                     </NumberInput>
