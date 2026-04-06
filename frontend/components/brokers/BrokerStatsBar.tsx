@@ -8,7 +8,7 @@ interface Props {
 
 function formatPnl(pnl: number): string {
   const sign = pnl >= 0 ? "+" : "-";
-  return `${sign}$${Math.abs(pnl).toFixed(2)}`;
+  return `${sign}₹${Math.abs(pnl).toFixed(2)}`;
 }
 
 export function BrokerStatsBar({ brokerId }: Props) {

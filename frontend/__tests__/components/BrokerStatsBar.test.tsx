@@ -33,7 +33,7 @@ describe("BrokerStatsBar", () => {
       isLoading: false,
     });
     render(<ChakraProvider><BrokerStatsBar brokerId="b1" /></ChakraProvider>);
-    expect(screen.getByText(/\+\$500/)).toBeInTheDocument();
+    expect(screen.getByText(/\+₹500/)).toBeInTheDocument();
   });
 
   it("formats negative P&L", () => {
@@ -42,6 +42,6 @@ describe("BrokerStatsBar", () => {
       isLoading: false,
     });
     render(<ChakraProvider><BrokerStatsBar brokerId="b1" /></ChakraProvider>);
-    expect(screen.getByText(/-\$200/)).toBeInTheDocument();
+    expect(screen.getByText(/-₹200/)).toBeInTheDocument();
   });
 });

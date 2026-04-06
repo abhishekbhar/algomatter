@@ -25,7 +25,7 @@ describe("BrokerPositionsTable", () => {
     expect(screen.getByText("BTCUSDT")).toBeInTheDocument();
     expect(screen.getByText("LONG")).toBeInTheDocument();
     expect(screen.getByText("BTC Strategy")).toBeInTheDocument();
-    expect(screen.getByText(/\+\$124/)).toBeInTheDocument();
+    expect(screen.getByText(/\+₹124/)).toBeInTheDocument();
   });
 
   it("renders empty state when no positions", () => {
@@ -49,6 +49,6 @@ describe("BrokerPositionsTable", () => {
     });
     render(<ChakraProvider><BrokerPositionsTable brokerId="b1" /></ChakraProvider>);
     expect(screen.getByText("SHORT")).toBeInTheDocument();
-    expect(screen.getByText(/-\$18/)).toBeInTheDocument();
+    expect(screen.getByText(/-₹18/)).toBeInTheDocument();
   });
 });

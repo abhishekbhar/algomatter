@@ -39,7 +39,7 @@ export function BrokerOrdersTable({ brokerId }: Props) {
               </Td>
               <Td isNumeric>{order.quantity}</Td>
               <Td>{order.order_type}</Td>
-              <Td isNumeric>{order.price != null ? `$${order.price.toLocaleString()}` : "MKT"}</Td>
+              <Td isNumeric>{order.price != null ? `₹${order.price.toLocaleString()}` : "MKT"}</Td>
               <Td color="gray.500" fontSize="sm">{order.deployment_name}</Td>
             </Tr>
           ))}

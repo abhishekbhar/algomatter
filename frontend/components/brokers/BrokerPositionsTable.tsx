@@ -14,7 +14,7 @@ interface Props {
 
 function formatPnl(pnl: number): string {
   const sign = pnl >= 0 ? "+" : "-";
-  return `${sign}$${Math.abs(pnl).toFixed(2)}`;
+  return `${sign}₹${Math.abs(pnl).toFixed(2)}`;
 }
 
 export function BrokerPositionsTable({ brokerId }: Props) {
@@ -70,7 +70,7 @@ export function BrokerPositionsTable({ brokerId }: Props) {
                 <Badge colorScheme={pos.side === "LONG" ? "green" : "red"}>{pos.side}</Badge>
               </Td>
               <Td isNumeric>{pos.quantity}</Td>
-              <Td isNumeric>${pos.avg_entry_price.toLocaleString()}</Td>
+              <Td isNumeric>₹{pos.avg_entry_price.toLocaleString()}</Td>
               <Td isNumeric color={pos.unrealized_pnl >= 0 ? "green.400" : "red.400"}>
                 {formatPnl(pos.unrealized_pnl)}
               </Td>

@@ -15,7 +15,7 @@ const PAGE_SIZE = 50;
 function formatPnl(pnl: number | null): string {
   if (pnl === null) return "—";
   const sign = pnl >= 0 ? "+" : "-";
-  return `${sign}$${Math.abs(pnl).toFixed(2)}`;
+  return `${sign}₹${Math.abs(pnl).toFixed(2)}`;
 }
 
 export function BrokerTradesTable({ brokerId }: Props) {
@@ -56,7 +56,7 @@ export function BrokerTradesTable({ brokerId }: Props) {
                   <Badge colorScheme={t.action === "BUY" ? "green" : "red"}>{t.action}</Badge>
                 </Td>
                 <Td isNumeric>{t.quantity}</Td>
-                <Td isNumeric>{t.fill_price != null ? `$${t.fill_price.toLocaleString()}` : "—"}</Td>
+                <Td isNumeric>{t.fill_price != null ? `₹${t.fill_price.toLocaleString()}` : "—"}</Td>
                 <Td isNumeric color={t.realized_pnl == null ? undefined : t.realized_pnl >= 0 ? "green.400" : "red.400"}>
                   {formatPnl(t.realized_pnl)}
                 </Td>

@@ -24,7 +24,7 @@ describe("BrokerTradesTable", () => {
     expect(screen.getByText("BTCUSDT")).toBeInTheDocument();
     expect(screen.getByText("BUY")).toBeInTheDocument();
     expect(screen.getByText("BTC Strategy")).toBeInTheDocument();
-    expect(screen.getByText(/\+\$100/)).toBeInTheDocument();
+    expect(screen.getByText(/\+₹100/)).toBeInTheDocument();
   });
 
   it("renders empty state when no trades", () => {
