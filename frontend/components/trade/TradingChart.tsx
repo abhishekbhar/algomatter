@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Box, Flex, Text, Button, Spinner, HStack } from "@chakra-ui/react";
+import { Box, Flex, Text, Button, Spinner, HStack, useColorModeValue } from "@chakra-ui/react";
 import {
   createChart,
   CandlestickSeries,
@@ -51,30 +51,39 @@ export function TradingChart({ symbol, price, change24h }: TradingChartProps) {
   const [interval, setInterval] = useState<Interval>("15m");
   const [loading, setLoading] = useState(true);
 
+  // Color mode values
+  const chartBg = useColorModeValue("#ffffff", "#1A202C");
+  const chartTextColor = useColorModeValue("#555", "#888");
+  const gridColor = useColorModeValue("#e2e8f0", "#2D3748");
+  const toolbarBg = useColorModeValue("white", "gray.800");
+  const toolbarBorder = useColorModeValue("gray.200", "gray.700");
+  const symbolColor = useColorModeValue("gray.800", "white");
+  const loadingBg = useColorModeValue("rgba(255,255,255,0.7)", "rgba(26,32,44,0.7)");
+
   // Create chart once on mount
   useEffect(() => {
     if (!containerRef.current) return;
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: "#0f1118" },
-        textColor: "#888",
+        background: { type: ColorType.Solid, color: chartBg },
+        textColor: chartTextColor,
       },
       grid: {
-        vertLines: { color: "#1c1f2e" },
-        horzLines: { color: "#1c1f2e" },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
       crosshair: {
-        vertLine: { color: "#555", width: 1, style: 3 },
-        horzLine: { color: "#555", width: 1, style: 3 },
+        vertLine: { color: "#888", width: 1, style: 3 },
+        horzLine: { color: "#888", width: 1, style: 3 },
       },
       timeScale: {
-        borderColor: "#1c1f2e",
+        borderColor: gridColor,
         timeVisible: true,
         secondsVisible: false,
       },
       rightPriceScale: {
-        borderColor: "#1c1f2e",
+        borderColor: gridColor,
       },
     });
 
@@ -116,7 +125,24 @@ export function TradingChart({ symbol, price, change24h }: TradingChartProps) {
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update chart colors when color mode changes
+  useEffect(() => {
+    if (!chartRef.current) return;
+    chartRef.current.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: chartBg },
+        textColor: chartTextColor,
+      },
+      grid: {
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
+      },
+      timeScale: { borderColor: gridColor },
+      rightPriceScale: { borderColor: gridColor },
+    });
+  }, [chartBg, chartTextColor, gridColor]);
 
   // Load historical data when symbol or interval changes
   useEffect(() => {
@@ -158,12 +184,11 @@ export function TradingChart({ symbol, price, change24h }: TradingChartProps) {
   useBinanceKlineStream(symbol, interval, handleKline);
 
   const priceColor =
-    change24h !== undefined && change24h >= 0 ? "#22c55e" : "#ef4444";
+    change24h !== undefined && change24h >= 0 ? "green.400" : "red.400";
 
   return (
     <Box
-      bg="#0f1118"
-      borderRadius="md"
+      bg={useColorModeValue("white", "gray.900")}
       overflow="hidden"
       h="100%"
       flex="1"
@@ -177,10 +202,12 @@ export function TradingChart({ symbol, price, change24h }: TradingChartProps) {
         py={2}
         align="center"
         gap={3}
-        borderBottom="1px solid #1c1f2e"
+        bg={toolbarBg}
+        borderBottom="1px"
+        borderColor={toolbarBorder}
         flexShrink={0}
       >
-        <Text color="white" fontWeight="bold" fontSize="sm">
+        <Text color={symbolColor} fontWeight="bold" fontSize="sm">
           {symbol}
         </Text>
 
@@ -207,7 +234,6 @@ export function TradingChart({ symbol, price, change24h }: TradingChartProps) {
               size="xs"
               variant={iv === interval ? "solid" : "ghost"}
               colorScheme={iv === interval ? "blue" : "gray"}
-              color={iv === interval ? "white" : "#888"}
               onClick={() => setInterval(iv)}
               fontWeight="medium"
               minW="36px"
@@ -227,7 +253,7 @@ export function TradingChart({ symbol, price, change24h }: TradingChartProps) {
             align="center"
             justify="center"
             zIndex={10}
-            bg="rgba(15,17,24,0.7)"
+            bg={loadingBg}
           >
             <Spinner color="blue.400" size="lg" />
           </Flex>

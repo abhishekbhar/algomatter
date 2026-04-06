@@ -37,9 +37,9 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
   const selectedBroker = brokerConnections?.find((b) => String(b.id) === selectedBrokerId);
   const caps = selectedBroker ? getBrokerCaps(selectedBroker.broker_type) : null;
 
-  const bg = useColorModeValue("white", "#151822");
-  const inputBg = useColorModeValue("gray.50", "#1c1f2e");
-  const borderColor = useColorModeValue("gray.200", "#2a2d3a");
+  const bg = useColorModeValue("white", "gray.800");
+  const inputBg = useColorModeValue("gray.50", "gray.700");
+  const borderColor = useColorModeValue("gray.200", "gray.700");
 
   const handlePriceSliderChange = (val: number) => {
     setPriceSliderPct(val);

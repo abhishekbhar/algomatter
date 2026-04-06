@@ -16,8 +16,8 @@ export function TradeHistory({ onTradeUpdate }: Props) {
   const { data: openData, mutate: refreshOpen } = useOpenManualTrades();
   const { data: historyData, mutate: refreshHistory } = useManualTrades(0, 50);
   const toast = useToast();
-  const borderColor = useColorModeValue("gray.200", "#2a2d3a");
-  const bg = useColorModeValue("white", "#151822");
+  const borderColor = useColorModeValue("gray.200", "gray.700");
+  const bg = useColorModeValue("white", "gray.800");
 
   const handleCancel = async (tradeId: string) => {
     try {
