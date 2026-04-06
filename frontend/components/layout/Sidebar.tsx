@@ -16,6 +16,7 @@ import {
   MdChevronLeft,
   MdChevronRight,
   MdQueryStats,
+  MdSwapHoriz,
 } from "react-icons/md";
 import { NavItem } from "./NavItem";
 
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { icon: MdShowChart, label: "Webhook Strategies", href: "/strategies" },
   { icon: MdCode, label: "Hosted Strategies", href: "/strategies/hosted" },
   { icon: MdTrendingUp, label: "Live Trading", href: "/live-trading" },
+  { icon: MdSwapHoriz, label: "Trade", href: "/trade" },
   { icon: MdWebhook, label: "Webhooks", href: "/webhooks" },
   { icon: MdAccountBalance, label: "Brokers", href: "/brokers" },
   { icon: MdPlayArrow, label: "Paper Trading", href: "/paper-trading" },
