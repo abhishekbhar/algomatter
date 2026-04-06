@@ -3,6 +3,7 @@ import {
   Box, Heading, Flex, Button, SimpleGrid, Card, CardHeader, CardBody, CardFooter,
   Text, useDisclosure, useToast,
 } from "@chakra-ui/react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -68,32 +69,34 @@ export default function BrokersPage() {
 
       <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={4}>
         {list.map((broker) => (
-          <Card key={broker.id}>
-            <CardHeader pb={2}>
-              <Flex justify="space-between" align="center">
-                <Text fontWeight="bold" fontSize="lg">{broker.broker_type}</Text>
-                <StatusBadge
-                  variant={broker.is_active ? "success" : "neutral"}
-                  text={broker.is_active ? "Active" : "Inactive"}
-                />
-              </Flex>
-            </CardHeader>
-            <CardBody py={2}>
-              <Text fontSize="sm" color="gray.500">
-                Connected: {formatDate(broker.connected_at)}
-              </Text>
-            </CardBody>
-            <CardFooter pt={2}>
-              <Button
-                size="xs"
-                colorScheme="red"
-                variant="ghost"
-                onClick={() => { setDeleteTarget(broker.id); onOpen(); }}
-              >
-                Delete
-              </Button>
-            </CardFooter>
-          </Card>
+          <Link key={broker.id} href={`/brokers/${broker.id}`} style={{ textDecoration: "none" }}>
+            <Card _hover={{ borderColor: "blue.400", cursor: "pointer" }} transition="border-color 0.15s">
+              <CardHeader pb={2}>
+                <Flex justify="space-between" align="center">
+                  <Text fontWeight="bold" fontSize="lg">{broker.broker_type}</Text>
+                  <StatusBadge
+                    variant={broker.is_active ? "success" : "neutral"}
+                    text={broker.is_active ? "Active" : "Inactive"}
+                  />
+                </Flex>
+              </CardHeader>
+              <CardBody py={2}>
+                <Text fontSize="sm" color="gray.500">
+                  Connected: {formatDate(broker.connected_at)}
+                </Text>
+              </CardBody>
+              <CardFooter pt={2}>
+                <Button
+                  size="xs"
+                  colorScheme="red"
+                  variant="ghost"
+                  onClick={(e) => { e.preventDefault(); setDeleteTarget(broker.id); onOpen(); }}
+                >
+                  Delete
+                </Button>
+              </CardFooter>
+            </Card>
+          </Link>
         ))}
       </SimpleGrid>
 
