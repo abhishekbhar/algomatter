@@ -34,6 +34,11 @@ class BrokerPositionResponse(BaseModel):
     unrealized_pnl: float
 
 
+class BrokerBalanceResponse(BaseModel):
+    available: float
+    total: float
+
+
 class BrokerOrderResponse(BaseModel):
     order_id: str
     deployment_id: str

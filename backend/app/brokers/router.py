@@ -8,12 +8,15 @@ from sqlalchemy.orm import selectinload
 
 from app.auth.deps import get_current_user, get_session, get_tenant_session
 from app.brokers.schemas import (
+    BrokerBalanceResponse,
     BrokerConnectionResponse,
     BrokerOrderResponse,
     BrokerPositionResponse,
     BrokerStatsResponse,
     CreateBrokerConnectionRequest,
 )
+from app.crypto.encryption import decrypt_credentials
+from app.brokers.factory import get_broker
 from app.crypto.encryption import encrypt_credentials
 from app.db.models import (
     BrokerConnection,
@@ -148,6 +151,32 @@ def _get_broker_or_404(connection_id, tenant_id):
             BrokerConnection.tenant_id == tenant_id,
         )
     )
+
+
+@router.get("/{broker_connection_id}/balance", response_model=BrokerBalanceResponse)
+async def get_broker_balance(
+    broker_connection_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    conn = await session.scalar(_get_broker_or_404(broker_connection_id, tenant_id))
+    if not conn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Broker connection not found",
+        )
+
+    credentials = decrypt_credentials(conn.tenant_id, conn.credentials)
+    broker = await get_broker(conn.broker_type, credentials)
+    try:
+        balance = await broker.get_balance()
+        return BrokerBalanceResponse(
+            available=float(balance.available),
+            total=float(balance.total),
+        )
+    finally:
+        await broker.close()
 
 
 @router.get("/{connection_id}/stats", response_model=BrokerStatsResponse)
