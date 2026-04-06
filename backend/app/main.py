@@ -16,6 +16,7 @@ from app.deployments.router import router as deployment_router
 from app.historical.router import router as historical_router
 from app.hosted_strategies.router import router as hosted_strategy_router
 from app.hosted_strategies.router import template_router
+from app.manual_trades.router import router as manual_trades_router
 from app.middleware.logging import RequestLoggingMiddleware
 from app.middleware.rate_limiter import RateLimiterMiddleware
 from app.paper_trading.router import router as paper_trading_router
@@ -63,6 +64,7 @@ app.include_router(historical_router)
 app.include_router(hosted_strategy_router)
 app.include_router(template_router)
 app.include_router(deployment_router)
+app.include_router(manual_trades_router)
 
 
 @app.get("/api/v1/health")
