@@ -395,3 +395,23 @@ async def test_get_broker_trades_404(client):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     resp = await client.get(f"/api/v1/brokers/{uuid_mod.uuid4()}/trades", headers=headers)
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_rls_isolation_broker_detail_endpoints(client):
+    """User B cannot access User A's broker stats/positions/orders/trades."""
+    tokens_a = await create_authenticated_user(client, email="rls_a@test.com")
+    headers_a = {"Authorization": f"Bearer {tokens_a['access_token']}"}
+    broker_resp = await client.post(
+        "/api/v1/brokers",
+        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        headers=headers_a,
+    )
+    broker_id = broker_resp.json()["id"]
+
+    tokens_b = await create_authenticated_user(client, email="rls_b@test.com")
+    headers_b = {"Authorization": f"Bearer {tokens_b['access_token']}"}
+
+    for endpoint in ["stats", "positions", "orders", "trades"]:
+        resp = await client.get(f"/api/v1/brokers/{broker_id}/{endpoint}", headers=headers_b)
+        assert resp.status_code == 404, f"Expected 404 for {endpoint}, got {resp.status_code}"

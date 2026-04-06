@@ -64,7 +64,7 @@ export function BrokerPositionsTable({ brokerId }: Props) {
         </Thead>
         <Tbody>
           {positions.map((pos) => (
-            <Tr key={pos.deployment_id} borderBottomWidth={1} borderColor={borderColor}>
+            <Tr key={`${pos.deployment_id}-${pos.symbol}`} borderBottomWidth={1} borderColor={borderColor}>
               <Td fontWeight="semibold">{pos.symbol}</Td>
               <Td>
                 <Badge colorScheme={pos.side === "LONG" ? "green" : "red"}>{pos.side}</Badge>
