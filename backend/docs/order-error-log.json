@@ -1,0 +1,108 @@
+{
+    "timestamp": "2026-04-05T14:23:57Z",
+    "symbol": "BTC",
+    "quantity": 1,
+    "attempts": [
+        {
+            "attempt": "1_user_original_no_symbol",
+            "request": {
+                "contractType": "1",
+                "direction": "long",
+                "leverage": "20",
+                "positionModel": "0",
+                "positionType": "plan",
+                "quantity": "1",
+                "quantityUnit": "1",
+                "apiVersion": "2",
+                "marginCurrency": "inr",
+                "quote": "usd",
+                "openPrice": "66200.2"
+            },
+            "http_status": 400,
+            "response_text": "Json deserialize error: missing field `symbol` at line 1 column 207"
+        },
+        {
+            "attempt": "2_user_original_with_symbol",
+            "request": {
+                "symbol": "btc",
+                "contractType": "1",
+                "direction": "long",
+                "leverage": "20",
+                "positionModel": "0",
+                "positionType": "plan",
+                "quantity": "1",
+                "quantityUnit": "1",
+                "apiVersion": "2",
+                "marginCurrency": "inr",
+                "quote": "usd",
+                "openPrice": "66200.2"
+            },
+            "http_status": 401,
+            "response": {
+                "code": 401,
+                "msg": "err",
+                "data": "sign error",
+                "info": null
+            }
+        },
+        {
+            "attempt": "3_adapter_limit_fix",
+            "request": {
+                "symbol": "btc",
+                "positionType": "limit",
+                "positionSide": "long",
+                "quantity": "1",
+                "quantityUnit": "cont",
+                "positionModel": "fix",
+                "leverage": "20",
+                "price": "66200.2"
+            },
+            "http_status": 500,
+            "response": {
+                "code": 500,
+                "msg": "err",
+                "data": "9008 Insufficient margin available",
+                "info": null
+            }
+        },
+        {
+            "attempt": "5_adapter_market_fix",
+            "request": {
+                "symbol": "btc",
+                "positionType": "market",
+                "positionSide": "long",
+                "quantity": "1",
+                "quantityUnit": "cont",
+                "positionModel": "fix",
+                "leverage": "20"
+            },
+            "http_status": 500,
+            "response": {
+                "code": 500,
+                "msg": "err",
+                "data": "9008 Insufficient margin available",
+                "info": null
+            }
+        },
+        {
+            "attempt": "4_adapter_limit_cross",
+            "request": {
+                "symbol": "btc",
+                "positionType": "limit",
+                "positionSide": "long",
+                "quantity": "1",
+                "quantityUnit": "cont",
+                "positionModel": "cross",
+                "leverage": "20",
+                "price": "66200.2"
+            },
+            "http_status": 500,
+            "response": {
+                "code": 500,
+                "msg": "err",
+                "data": "9050 Your current mode does not match, please switch and operate",
+                "info": null
+            }
+        }
+    ]
+}

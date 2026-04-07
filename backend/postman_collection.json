@@ -1,0 +1,345 @@
+{
+	"info": {
+		"name": "AlgoMatter – TradingView → Exchange1",
+		"description": "End-to-end test: signup → connect broker → create strategy → fire webhook → check signals.\n\nRun requests in order. The collection auto-captures tokens and IDs via post-response scripts.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{ "key": "base_url", "value": "http://localhost:8000" },
+		{ "key": "email", "value": "test@test.com" },
+		{ "key": "password", "value": "Test1234!" },
+		{ "key": "access_token", "value": "" },
+		{ "key": "refresh_token", "value": "" },
+		{ "key": "webhook_token", "value": "" },
+		{ "key": "broker_connection_id", "value": "" },
+		{ "key": "strategy_id", "value": "" },
+		{ "key": "exchange1_api_key", "value": "YOUR_API_KEY" },
+		{ "key": "exchange1_private_key", "value": "YOUR_RSA_PRIVATE_KEY" }
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [{ "key": "token", "value": "{{access_token}}" }]
+	},
+	"item": [
+		{
+			"name": "1. Auth",
+			"item": [
+				{
+					"name": "Signup",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/auth/signup", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "signup"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [{
+						"listen": "test",
+						"script": {
+							"exec": [
+								"var json = pm.response.json();",
+								"if (json.access_token) {",
+								"    pm.collectionVariables.set('access_token', json.access_token);",
+								"    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+								"    pm.test('Signup successful', function() { pm.response.to.have.status(201); });",
+								"}"
+							]
+						}
+					}]
+				},
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/auth/login", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "login"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [{
+						"listen": "test",
+						"script": {
+							"exec": [
+								"var json = pm.response.json();",
+								"if (json.access_token) {",
+								"    pm.collectionVariables.set('access_token', json.access_token);",
+								"    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+								"    pm.test('Login successful', function() { pm.response.to.have.status(200); });",
+								"}"
+							]
+						}
+					}]
+				},
+				{
+					"name": "Refresh Token",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/auth/refresh", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "refresh"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [{
+						"listen": "test",
+						"script": {
+							"exec": [
+								"var json = pm.response.json();",
+								"if (json.access_token) {",
+								"    pm.collectionVariables.set('access_token', json.access_token);",
+								"    pm.collectionVariables.set('refresh_token', json.refresh_token);",
+								"}"
+							]
+						}
+					}]
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/auth/me", "host": ["{{base_url}}"], "path": ["api", "v1", "auth", "me"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "2. Broker",
+			"item": [
+				{
+					"name": "Connect Exchange1",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/brokers/", "host": ["{{base_url}}"], "path": ["api", "v1", "brokers", ""] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"broker_type\": \"exchange1\",\n  \"credentials\": {\n    \"api_key\": \"{{exchange1_api_key}}\",\n    \"private_key\": \"{{exchange1_private_key}}\"\n  }\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [{
+						"listen": "test",
+						"script": {
+							"exec": [
+								"var json = pm.response.json();",
+								"if (json.id) {",
+								"    pm.collectionVariables.set('broker_connection_id', json.id);",
+								"    pm.test('Broker connected', function() { pm.response.to.have.status(201); });",
+								"}"
+							]
+						}
+					}]
+				},
+				{
+					"name": "List Brokers",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/brokers/", "host": ["{{base_url}}"], "path": ["api", "v1", "brokers", ""] }
+					}
+				},
+				{
+					"name": "Delete Broker",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/brokers/{{broker_connection_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "brokers", "{{broker_connection_id}}"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "3. Strategy",
+			"item": [
+				{
+					"name": "Create Strategy (paper)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/strategies/", "host": ["{{base_url}}"], "path": ["api", "v1", "strategies", ""] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"TV BTC Scalper\",\n  \"broker_connection_id\": \"{{broker_connection_id}}\",\n  \"mode\": \"paper\",\n  \"is_active\": true,\n  \"mapping_template\": {\n    \"symbol\": \"$.symbol\",\n    \"exchange\": \"EXCHANGE1\",\n    \"action\": \"$.action\",\n    \"quantity\": \"$.quantity\",\n    \"order_type\": \"$.order_type\",\n    \"product_type\": \"DELIVERY\"\n  },\n  \"rules\": {}\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [{
+						"listen": "test",
+						"script": {
+							"exec": [
+								"var json = pm.response.json();",
+								"if (json.id) {",
+								"    pm.collectionVariables.set('strategy_id', json.id);",
+								"    pm.test('Strategy created', function() { pm.response.to.have.status(201); });",
+								"}"
+							]
+						}
+					}]
+				},
+				{
+					"name": "List Strategies",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/strategies/", "host": ["{{base_url}}"], "path": ["api", "v1", "strategies", ""] }
+					}
+				},
+				{
+					"name": "Get Strategy",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/strategies/{{strategy_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "strategies", "{{strategy_id}}"] }
+					}
+				},
+				{
+					"name": "Promote to Live",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/strategies/{{strategy_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "strategies", "{{strategy_id}}"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"mode\": \"live\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					}
+				},
+				{
+					"name": "Delete Strategy",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/strategies/{{strategy_id}}", "host": ["{{base_url}}"], "path": ["api", "v1", "strategies", "{{strategy_id}}"] }
+					}
+				}
+			]
+		},
+		{
+			"name": "4. Webhook",
+			"item": [
+				{
+					"name": "Get Webhook Config",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/webhooks/config", "host": ["{{base_url}}"], "path": ["api", "v1", "webhooks", "config"] }
+					},
+					"event": [{
+						"listen": "test",
+						"script": {
+							"exec": [
+								"var json = pm.response.json();",
+								"if (json.token) {",
+								"    pm.collectionVariables.set('webhook_token', json.token);",
+								"    pm.test('Webhook token captured', function() { pm.response.to.have.status(200); });",
+								"}"
+							]
+						}
+					}]
+				},
+				{
+					"name": "Regenerate Webhook Token",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/webhooks/config/regenerate-token", "host": ["{{base_url}}"], "path": ["api", "v1", "webhooks", "config", "regenerate-token"] }
+					},
+					"event": [{
+						"listen": "test",
+						"script": {
+							"exec": [
+								"var json = pm.response.json();",
+								"if (json.token) {",
+								"    pm.collectionVariables.set('webhook_token', json.token);",
+								"}"
+							]
+						}
+					}]
+				},
+				{
+					"name": "🔥 Fire Test Signal (BUY)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{base_url}}/api/v1/webhook/{{webhook_token}}", "host": ["{{base_url}}"], "path": ["api", "v1", "webhook", "{{webhook_token}}"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"symbol\": \"btcusdt\",\n  \"action\": \"BUY\",\n  \"quantity\": \"0.001\",\n  \"order_type\": \"MARKET\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [{
+						"listen": "test",
+						"script": {
+							"exec": [
+								"pm.test('Signal received', function() {",
+								"    var json = pm.response.json();",
+								"    pm.expect(json.received).to.eql(true);",
+								"    pm.expect(json.signals_processed).to.be.above(0);",
+								"});"
+							]
+						}
+					}]
+				},
+				{
+					"name": "🔥 Fire Test Signal (SELL)",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{base_url}}/api/v1/webhook/{{webhook_token}}", "host": ["{{base_url}}"], "path": ["api", "v1", "webhook", "{{webhook_token}}"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"symbol\": \"btcusdt\",\n  \"action\": \"SELL\",\n  \"quantity\": \"0.001\",\n  \"order_type\": \"MARKET\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					},
+					"event": [{
+						"listen": "test",
+						"script": {
+							"exec": [
+								"pm.test('Signal received', function() {",
+								"    var json = pm.response.json();",
+								"    pm.expect(json.received).to.eql(true);",
+								"});"
+							]
+						}
+					}]
+				},
+				{
+					"name": "🔥 Fire TradingView-style Signal",
+					"request": {
+						"auth": { "type": "noauth" },
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"url": { "raw": "{{base_url}}/api/v1/webhook/{{webhook_token}}", "host": ["{{base_url}}"], "path": ["api", "v1", "webhook", "{{webhook_token}}"] },
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"symbol\": \"ethusdt\",\n  \"action\": \"BUY\",\n  \"quantity\": \"0.05\",\n  \"order_type\": \"LIMIT\",\n  \"price\": \"1800.50\"\n}",
+							"options": { "raw": { "language": "json" } }
+						}
+					}
+				},
+				{
+					"name": "List Signal History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{base_url}}/api/v1/webhooks/signals", "host": ["{{base_url}}"], "path": ["api", "v1", "webhooks", "signals"] }
+					}
+				}
+			]
+		}
+	]
+}
