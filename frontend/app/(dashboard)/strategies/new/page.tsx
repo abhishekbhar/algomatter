@@ -110,7 +110,7 @@ export default function NewStrategyPage() {
             >
               {(brokers ?? []).map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.broker_type} ({b.is_active ? "Active" : "Inactive"})
+                  {b.label} — {b.broker_type}{b.is_active ? "" : " (Inactive)"}
                 </option>
               ))}
             </Select>

@@ -73,7 +73,7 @@ export function PromoteModal({ isOpen, onClose, deployment, onPromoted }: Promot
                 >
                   {(brokers ?? []).map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.broker_type} ({b.id.slice(0, 8)}...)
+                      {b.label} — {b.broker_type}
                     </option>
                   ))}
                 </Select>
