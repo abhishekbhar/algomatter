@@ -100,6 +100,30 @@ async def test_simulated_insufficient_balance():
     assert resp.status == "rejected"
 
 
+def test_order_request_position_side_defaults_to_none():
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="EXCHANGE1", action="BUY",
+        quantity=Decimal("1"), order_type="LIMIT", price=Decimal("60000"),
+        product_type="FUTURES",
+    )
+    assert order.position_side is None
+
+
+def test_order_request_position_side_accepts_long_and_short():
+    long_order = OrderRequest(
+        symbol="BTCUSDT", exchange="EXCHANGE1", action="BUY",
+        quantity=Decimal("1"), order_type="LIMIT", price=Decimal("60000"),
+        product_type="FUTURES", position_side="long",
+    )
+    short_order = OrderRequest(
+        symbol="BTCUSDT", exchange="EXCHANGE1", action="SELL",
+        quantity=Decimal("1"), order_type="MARKET", price=Decimal("0"),
+        product_type="FUTURES", position_side="short",
+    )
+    assert long_order.position_side == "long"
+    assert short_order.position_side == "short"
+
+
 # ---------------------------------------------------------------------------
 # Exchange1 futures path tests (mocked, no live API calls)
 # ---------------------------------------------------------------------------

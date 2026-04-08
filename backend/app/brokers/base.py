@@ -35,6 +35,7 @@ class OrderRequest(BaseModel):
     position_model: str | None = None    # "isolated" → "fix", "cross" → "cross"
     take_profit: Decimal | None = None   # TP price
     stop_loss: Decimal | None = None     # SL price
+    position_side: Literal["long", "short"] | None = None  # None = default for action
 
 
 class OrderResponse(BaseModel):
