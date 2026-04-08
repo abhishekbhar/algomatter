@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth.deps import get_current_user, get_tenant_session
+from app.config import settings
 from app.db.models import (
     DeploymentLog,
     DeploymentState,
@@ -157,6 +158,12 @@ async def create_deployment(
     # Validate mode
     if body.mode not in ("backtest", "paper", "live"):
         raise HTTPException(status_code=400, detail="mode must be backtest, paper, or live")
+
+    # Feature flag guards
+    if body.mode == "paper" and not settings.enable_paper_trading:
+        raise HTTPException(status_code=403, detail="Paper trading is disabled")
+    if body.mode == "backtest" and not settings.enable_backtesting:
+        raise HTTPException(status_code=403, detail="Backtesting is disabled")
 
     # Check deployment limits
     await check_deployment_limits(session, tenant_id, body.mode)
