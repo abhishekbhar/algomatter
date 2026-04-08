@@ -160,6 +160,7 @@ async def test_exchange1_futures_buy_builds_correct_body():
         order_type="LIMIT",
         price=Decimal("66000"),
         product_type="FUTURES",
+        # position_model omitted → defaults to "cross"
     )
     resp = await broker.place_order(order)
 
@@ -171,13 +172,14 @@ async def test_exchange1_futures_buy_builds_correct_body():
             "positionSide": "long",
             "quantity": "2",
             "quantityUnit": "cont",
-            "positionModel": "fix",
+            "positionModel": "cross",
+            "leverage": "10",
             "price": "66000",
         },
         signed=True,
     )
     assert resp.status == "open"
-    assert resp.order_id == "futures:98765"
+    assert resp.order_id == "futures:limit:btc:98765"
 
 
 @pytest.mark.asyncio
@@ -225,9 +227,9 @@ async def test_exchange1_futures_isolated_is_fix():
 
 
 @pytest.mark.asyncio
-async def test_exchange1_futures_tp_sl():
+async def test_exchange1_futures_tp_sl_both_rejected():
+    """TP or SL on futures → rejected before any API call (Exchange1 sign error)."""
     broker = _make_exchange1()
-    broker._post.return_value = {"data": "77777"}
 
     order = OrderRequest(
         symbol="BTCUSDT",
@@ -241,17 +243,17 @@ async def test_exchange1_futures_tp_sl():
         take_profit=Decimal("70000"),
         stop_loss=Decimal("62000"),
     )
-    await broker.place_order(order)
+    resp = await broker.place_order(order)
 
-    body = broker._post.call_args.kwargs["body"]
-    assert body["takeProfitPrice"] == "70000"
-    assert body["stopLossPrice"] == "62000"
-    assert body["leverage"] == "10"
+    # take_profit is checked first — no API call made
+    broker._post.assert_not_called()
+    assert resp.status == "rejected"
+    assert "take_profit" in resp.message.lower()
 
 
 @pytest.mark.asyncio
 async def test_exchange1_futures_sell_closes_position():
-    """SELL on futures → close via /openapi/v1/futures/order/close, not open short."""
+    """SELL on futures (default long side) → close via /openapi/v1/futures/order/close."""
     broker = _make_exchange1()
     broker._post.return_value = {"data": "11111"}
 
@@ -271,7 +273,7 @@ async def test_exchange1_futures_sell_closes_position():
         body={"symbol": "btc", "positionType": "market", "closeType": "all"},
         signed=True,
     )
-    assert resp.order_id == "futures:11111"
+    assert resp.order_id == "futures:market:btc:11111"
 
 
 @pytest.mark.asyncio
@@ -302,10 +304,10 @@ async def test_exchange1_futures_cancel_routes_correctly():
     broker = _make_exchange1()
     broker._post.return_value = {}
 
-    await broker.cancel_order("futures:42")
+    await broker.cancel_order("futures:limit:btc:42")
     broker._post.assert_called_once_with(
         "/openapi/v1/futures/order/cancel",
-        body={"id": "42"},
+        body={"id": "42", "symbol": "btc", "positionType": "limit"},
         signed=True,
     )
 
@@ -325,14 +327,15 @@ async def test_exchange1_spot_cancel_routes_correctly():
 
 @pytest.mark.asyncio
 async def test_exchange1_futures_order_status_filled_when_absent():
-    """Order not in current list → treated as filled."""
+    """Order not in current orders list → treat as filled."""
     broker = _make_exchange1()
-    broker._get.return_value = {"data": {"list": []}}
+    # Exchange1 returns rows under "data.rows", not "data.list"
+    broker._get.return_value = {"data": {"rows": []}}
 
-    status = await broker.get_order_status("futures:999")
+    status = await broker.get_order_status("futures:market:btc:999")
 
     assert status.status == "filled"
-    assert status.order_id == "futures:999"
+    assert status.order_id == "futures:market:btc:999"
 
 
 @pytest.mark.asyncio
