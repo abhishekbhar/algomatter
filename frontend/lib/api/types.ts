@@ -56,6 +56,7 @@ export interface WebhookSignal {
 export interface BrokerConnection {
   id: string;
   broker_type: string;
+  label: string;
   is_active: boolean;
   connected_at: string;
 }
