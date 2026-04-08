@@ -1,4 +1,9 @@
 import pytest
+from pydantic import ValidationError
+from app.brokers.schemas import (
+    CreateBrokerConnectionRequest,
+    UpdateBrokerConnectionRequest,
+)
 from tests.conftest import create_authenticated_user
 
 
@@ -10,6 +15,7 @@ async def test_create_broker_connection(client):
         "/api/v1/brokers",
         json={
             "broker_type": "zerodha",
+            "label": "Create Test",
             "credentials": {"api_key": "xxx", "api_secret": "yyy"},
         },
         headers=headers,
@@ -17,6 +23,7 @@ async def test_create_broker_connection(client):
     assert resp.status_code == 201
     data = resp.json()
     assert data["broker_type"] == "zerodha"
+    assert data["label"] == "Create Test"
     assert "credentials" not in data  # credentials must not be in response
     assert "id" in data
     assert data["is_active"] is True
@@ -30,6 +37,7 @@ async def test_list_broker_connections(client):
         "/api/v1/brokers",
         json={
             "broker_type": "zerodha",
+            "label": "List Test",
             "credentials": {"api_key": "xxx", "api_secret": "yyy"},
         },
         headers=headers,
@@ -47,6 +55,7 @@ async def test_delete_broker_connection(client):
         "/api/v1/brokers",
         json={
             "broker_type": "zerodha",
+            "label": "Delete Test",
             "credentials": {"api_key": "xxx", "api_secret": "yyy"},
         },
         headers=headers,
@@ -69,6 +78,7 @@ async def test_rls_isolation_broker_connections(client):
         "/api/v1/brokers",
         json={
             "broker_type": "zerodha",
+            "label": "RLS A",
             "credentials": {"api_key": "xxx", "api_secret": "yyy"},
         },
         headers=headers_a,
@@ -96,7 +106,7 @@ async def test_get_broker_stats_with_data(client):
 
     broker_resp = await client.post(
         "/api/v1/brokers",
-        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        json={"broker_type": "exchange1", "label": "Stats With Data", "credentials": {"api_key": "k", "private_key": "p"}},
         headers=headers,
     )
     broker_id = broker_resp.json()["id"]
@@ -153,7 +163,7 @@ async def test_get_broker_positions_with_data(client):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     broker_resp = await client.post(
         "/api/v1/brokers",
-        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        json={"broker_type": "exchange1", "label": "Positions With Data", "credentials": {"api_key": "k", "private_key": "p"}},
         headers=headers,
     )
     broker_id = broker_resp.json()["id"]
@@ -203,7 +213,7 @@ async def test_get_broker_orders_with_data(client):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     broker_resp = await client.post(
         "/api/v1/brokers",
-        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        json={"broker_type": "exchange1", "label": "Orders With Data", "credentials": {"api_key": "k", "private_key": "p"}},
         headers=headers,
     )
     broker_id = broker_resp.json()["id"]
@@ -253,7 +263,7 @@ async def test_get_broker_trades_with_data(client):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     broker_resp = await client.post(
         "/api/v1/brokers",
-        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        json={"broker_type": "exchange1", "label": "Trades With Data", "credentials": {"api_key": "k", "private_key": "p"}},
         headers=headers,
     )
     broker_id = broker_resp.json()["id"]
@@ -304,7 +314,7 @@ async def test_get_broker_stats_empty(client):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     broker_resp = await client.post(
         "/api/v1/brokers",
-        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        json={"broker_type": "exchange1", "label": "Stats Empty", "credentials": {"api_key": "k", "private_key": "p"}},
         headers=headers,
     )
     broker_id = broker_resp.json()["id"]
@@ -331,7 +341,7 @@ async def test_get_broker_positions(client):
 
     broker_resp = await client.post(
         "/api/v1/brokers",
-        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        json={"broker_type": "exchange1", "label": "Positions Empty", "credentials": {"api_key": "k", "private_key": "p"}},
         headers=headers,
     )
     broker_id = broker_resp.json()["id"]
@@ -355,7 +365,7 @@ async def test_get_broker_orders_empty(client):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     broker_resp = await client.post(
         "/api/v1/brokers",
-        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        json={"broker_type": "exchange1", "label": "Orders Empty", "credentials": {"api_key": "k", "private_key": "p"}},
         headers=headers,
     )
     broker_id = broker_resp.json()["id"]
@@ -378,7 +388,7 @@ async def test_get_broker_trades_empty(client):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     broker_resp = await client.post(
         "/api/v1/brokers",
-        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        json={"broker_type": "exchange1", "label": "Trades Empty", "credentials": {"api_key": "k", "private_key": "p"}},
         headers=headers,
     )
     broker_id = broker_resp.json()["id"]
@@ -404,7 +414,7 @@ async def test_rls_isolation_broker_detail_endpoints(client):
     headers_a = {"Authorization": f"Bearer {tokens_a['access_token']}"}
     broker_resp = await client.post(
         "/api/v1/brokers",
-        json={"broker_type": "exchange1", "credentials": {"api_key": "k", "private_key": "p"}},
+        json={"broker_type": "exchange1", "label": "RLS Detail A", "credentials": {"api_key": "k", "private_key": "p"}},
         headers=headers_a,
     )
     broker_id = broker_resp.json()["id"]
@@ -415,3 +425,149 @@ async def test_rls_isolation_broker_detail_endpoints(client):
     for endpoint in ["stats", "positions", "orders", "trades"]:
         resp = await client.get(f"/api/v1/brokers/{broker_id}/{endpoint}", headers=headers_b)
         assert resp.status_code == 404, f"Expected 404 for {endpoint}, got {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_create_broker_connection_returns_422_without_label(client):
+    tokens = await create_authenticated_user(client, email="nolabel@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    resp = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_broker_connection_trims_label(client):
+    tokens = await create_authenticated_user(client, email="trim@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    resp = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "label": "   Padded   ",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["label"] == "Padded"
+
+
+@pytest.mark.asyncio
+async def test_create_broker_connection_duplicate_label_returns_409(client):
+    tokens = await create_authenticated_user(client, email="dup@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    payload = {
+        "broker_type": "zerodha",
+        "label": "Duplicate",
+        "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+    }
+    first = await client.post("/api/v1/brokers", json=payload, headers=headers)
+    assert first.status_code == 201
+
+    second = await client.post("/api/v1/brokers", json=payload, headers=headers)
+    assert second.status_code == 409
+    assert "already exists" in second.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_broker_connection_same_label_different_tenants_ok(client):
+    tokens_a = await create_authenticated_user(client, email="tenant_a@test.com")
+    tokens_b = await create_authenticated_user(client, email="tenant_b@test.com")
+    payload = {
+        "broker_type": "zerodha",
+        "label": "Shared Name",
+        "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+    }
+    resp_a = await client.post(
+        "/api/v1/brokers",
+        json=payload,
+        headers={"Authorization": f"Bearer {tokens_a['access_token']}"},
+    )
+    resp_b = await client.post(
+        "/api/v1/brokers",
+        json=payload,
+        headers={"Authorization": f"Bearer {tokens_b['access_token']}"},
+    )
+    assert resp_a.status_code == 201
+    assert resp_b.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_list_broker_connections_includes_label(client):
+    tokens = await create_authenticated_user(client, email="listlabel@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "label": "Main Account",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers,
+    )
+    resp = await client.get("/api/v1/brokers", headers=headers)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    assert rows[0]["label"] == "Main Account"
+
+
+# -----------------------------------------------------------------------------
+# validate_label — schema-layer unit tests
+# -----------------------------------------------------------------------------
+
+def _valid_creds():
+    return {"api_key": "k", "api_secret": "s"}
+
+
+def test_create_schema_requires_label():
+    with pytest.raises(ValidationError):
+        CreateBrokerConnectionRequest(broker_type="zerodha", credentials=_valid_creds())
+
+
+def test_create_schema_rejects_blank_label():
+    with pytest.raises(ValidationError):
+        CreateBrokerConnectionRequest(
+            broker_type="zerodha", label="   ", credentials=_valid_creds()
+        )
+
+
+def test_create_schema_rejects_too_long_label():
+    with pytest.raises(ValidationError):
+        CreateBrokerConnectionRequest(
+            broker_type="zerodha", label="x" * 41, credentials=_valid_creds()
+        )
+
+
+def test_create_schema_trims_whitespace():
+    req = CreateBrokerConnectionRequest(
+        broker_type="zerodha", label="  Main  ", credentials=_valid_creds()
+    )
+    assert req.label == "Main"
+
+
+def test_update_schema_requires_label():
+    with pytest.raises(ValidationError):
+        UpdateBrokerConnectionRequest()  # type: ignore[call-arg]
+
+
+def test_update_schema_rejects_blank_label():
+    with pytest.raises(ValidationError):
+        UpdateBrokerConnectionRequest(label="")
+
+
+def test_update_schema_rejects_too_long_label():
+    with pytest.raises(ValidationError):
+        UpdateBrokerConnectionRequest(label="y" * 41)
+
+
+def test_update_schema_trims_whitespace():
+    req = UpdateBrokerConnectionRequest(label="  My Account  ")
+    assert req.label == "My Account"

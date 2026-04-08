@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     Numeric,
@@ -55,12 +56,21 @@ class RefreshToken(Base):
 
 class BrokerConnection(Base):
     __tablename__ = "broker_connections"
+    __table_args__ = (
+        Index(
+            "ix_broker_connections_tenant_label",
+            "tenant_id",
+            "label",
+            unique=True,
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False
     )
     broker_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    label: Mapped[str] = mapped_column(String(40), nullable=False)
     credentials: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     connected_at: Mapped[datetime] = mapped_column(

@@ -4,6 +4,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -56,16 +57,25 @@ async def create_broker_connection(
     conn = BrokerConnection(
         tenant_id=tenant_id,
         broker_type=body.broker_type,
+        label=body.label,
         credentials=encrypted,
         is_active=True,
     )
     session.add(conn)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A broker connection with this label already exists",
+        )
     await session.refresh(conn)
 
     return BrokerConnectionResponse(
         id=conn.id,
         broker_type=conn.broker_type,
+        label=conn.label,
         is_active=conn.is_active,
         connected_at=conn.connected_at,
     )
@@ -85,6 +95,7 @@ async def list_broker_connections(
         BrokerConnectionResponse(
             id=c.id,
             broker_type=c.broker_type,
+            label=c.label,
             is_active=c.is_active,
             connected_at=c.connected_at,
         )
