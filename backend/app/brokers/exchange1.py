@@ -616,9 +616,10 @@ class Exchange1Broker(BrokerAdapter):
         positions: list[Position] = []
 
         # --- Spot positions (non-zero, non-quote asset balances) ---
+        # Base-token holdings live in the "asset" biz account, not "spot".
         accounts = await self._get_balance_data()
         for acc in accounts:
-            if acc.get("account_type") != "spot":
+            if acc.get("account_type") != "asset":
                 continue
             currency = acc.get("currency", "")
             if currency in QUOTE_ASSETS:

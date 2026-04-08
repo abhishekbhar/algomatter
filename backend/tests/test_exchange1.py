@@ -650,15 +650,85 @@ class TestCancelAndStatus:
 # Portfolio / Balance
 # ---------------------------------------------------------------------------
 
+# Represents the real Exchange1 /openapi/v1/balance response shape.
+# "asset" biz → base-token holdings (BTC, ETH, SOL)
+# "spot"  biz → quote currency (USDT, USDC)
+# "cfd"   biz → perpetual futures margin account
 _BALANCE_RESPONSE = {
     "code": 200,
-    "data": [
-        {"currency": "USDT", "available": "5000.00", "hold": "1000.00", "total": "6000.00"},
-        {"currency": "BTC", "available": "0.5", "hold": "0.1", "total": "0.6"},
-        {"currency": "ETH", "available": "10.0", "hold": "0.0", "total": "10.0"},
-        {"currency": "USDC", "available": "2000.00", "hold": "0.0", "total": "2000.00"},
-        {"currency": "SOL", "available": "0.0", "hold": "0.0", "total": "0.0"},
-    ],
+    "data": {
+        "accounts": [
+            {
+                "biz": {"name": "asset"},
+                "currencies": [
+                    {
+                        "displayCode": "BTC",
+                        "balance": {
+                            "available": "0.5",
+                            "hold": "0.1",
+                            "total": "0.6",
+                            "availableMargin": "0.5",
+                        },
+                    },
+                    {
+                        "displayCode": "ETH",
+                        "balance": {
+                            "available": "10.0",
+                            "hold": "0.0",
+                            "total": "10.0",
+                            "availableMargin": "10.0",
+                        },
+                    },
+                    {
+                        "displayCode": "SOL",
+                        "balance": {
+                            "available": "0.0",
+                            "hold": "0.0",
+                            "total": "0.0",
+                            "availableMargin": "0.0",
+                        },
+                    },
+                ],
+            },
+            {
+                "biz": {"name": "spot"},
+                "currencies": [
+                    {
+                        "displayCode": "USDT",
+                        "balance": {
+                            "available": "5000.00",
+                            "hold": "1000.00",
+                            "total": "6000.00",
+                            "availableMargin": "5000.00",
+                        },
+                    },
+                    {
+                        "displayCode": "USDC",
+                        "balance": {
+                            "available": "2000.00",
+                            "hold": "0.0",
+                            "total": "2000.00",
+                            "availableMargin": "2000.00",
+                        },
+                    },
+                ],
+            },
+            {
+                "biz": {"name": "cfd"},
+                "currencies": [
+                    {
+                        "displayCode": "USDT",
+                        "balance": {
+                            "available": "0.0",
+                            "hold": "0.0",
+                            "total": "0.0",
+                            "availableMargin": "0.0",
+                        },
+                    },
+                ],
+            },
+        ]
+    },
 }
 
 
@@ -667,7 +737,8 @@ class TestPortfolio:
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_get_balance_extracts_usdt(self):
+    async def test_get_balance_default_returns_first_asset(self):
+        """get_balance() with no product_type → first 'asset' account with funds (BTC)."""
         respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
             return_value=httpx.Response(200, json=_BALANCE_RESPONSE)
         )
@@ -676,15 +747,56 @@ class TestPortfolio:
         balance = await broker.get_balance()
         await broker.close()
 
-        assert balance.available == Decimal("5000.00")
-        assert balance.used_margin == Decimal("1000.00")
-        assert balance.total == Decimal("6000.00")
+        # Legacy path #2: first asset with non-zero available → BTC (0.5 available)
+        assert balance.available == Decimal("0.5")
+        assert balance.used_margin == Decimal("0.1")
+        assert balance.total == Decimal("0.6")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_balance_futures_returns_cfd_margin(self):
+        """get_balance(product_type='FUTURES') → CFD account availableMargin."""
+        cfd_response = {
+            "code": 200,
+            "data": {
+                "accounts": [
+                    {
+                        "biz": {"name": "cfd"},
+                        "currencies": [
+                            {
+                                "displayCode": "USDT",
+                                "balance": {
+                                    "available": "3000.00",
+                                    "hold": "500.00",
+                                    "total": "3500.00",
+                                    "availableMargin": "3000.00",
+                                },
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+        respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
+            return_value=httpx.Response(200, json=cfd_response)
+        )
+
+        broker = _make_authenticated_broker()
+        balance = await broker.get_balance(product_type="FUTURES")
+        await broker.close()
+
+        assert balance.available == Decimal("3000.00")
+        assert balance.used_margin == Decimal("500.00")
+        assert balance.total == Decimal("3500.00")
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_get_positions_excludes_quote_and_zero(self):
         respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
             return_value=httpx.Response(200, json=_BALANCE_RESPONSE)
+        )
+        respx.get(f"{BASE_URL}/openapi/v1/futures/order/positions").mock(
+            return_value=httpx.Response(200, json={"code": 200, "data": {"list": []}})
         )
 
         broker = _make_authenticated_broker()
@@ -703,6 +815,9 @@ class TestPortfolio:
     async def test_get_positions_fields(self):
         respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
             return_value=httpx.Response(200, json=_BALANCE_RESPONSE)
+        )
+        respx.get(f"{BASE_URL}/openapi/v1/futures/order/positions").mock(
+            return_value=httpx.Response(200, json={"code": 200, "data": {"list": []}})
         )
 
         broker = _make_authenticated_broker()
@@ -738,6 +853,9 @@ class TestPortfolio:
     async def test_account_cache_prevents_duplicate_calls(self):
         route = respx.get(f"{BASE_URL}/openapi/v1/balance").mock(
             return_value=httpx.Response(200, json=_BALANCE_RESPONSE)
+        )
+        respx.get(f"{BASE_URL}/openapi/v1/futures/order/positions").mock(
+            return_value=httpx.Response(200, json={"code": 200, "data": {"list": []}})
         )
 
         broker = _make_authenticated_broker()
