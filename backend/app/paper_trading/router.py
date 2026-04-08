@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user, get_session
 from app.db.models import PaperPosition, PaperTrade, PaperTradingSession, Strategy, StrategyCode, StrategyDeployment
+from app.feature_flags import require_paper_trading_enabled
 
 router = APIRouter(prefix="/api/v1/paper-trading", tags=["paper-trading"])
 
@@ -18,7 +19,11 @@ class CreateSessionRequest(BaseModel):
 
 
 # ---- POST /sessions ----
-@router.post("/sessions", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/sessions",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_paper_trading_enabled)],
+)
 async def create_session(
     body: CreateSessionRequest,
     current_user: dict = Depends(get_current_user),
@@ -251,7 +256,10 @@ async def get_session_detail(
 
 
 # ---- POST /sessions/{id}/stop ----
-@router.post("/sessions/{session_id}/stop")
+@router.post(
+    "/sessions/{session_id}/stop",
+    dependencies=[Depends(require_paper_trading_enabled)],
+)
 async def stop_session(
     session_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
