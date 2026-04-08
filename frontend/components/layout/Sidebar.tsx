@@ -1,7 +1,8 @@
 "use client";
 import { Box, VStack, IconButton, Flex, Text, useColorModeValue } from "@chakra-ui/react";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { IconType } from "react-icons";
 import {
   MdDashboard,
   MdShowChart,
@@ -19,8 +20,14 @@ import {
   MdSwapHoriz,
 } from "react-icons/md";
 import { NavItem } from "./NavItem";
+import { useFeatureFlags } from "@/lib/contexts/FeatureFlagsContext";
+import { filterNavItems, NavItemDescriptor } from "@/lib/utils/filterNavItems";
 
-const NAV_ITEMS = [
+interface SidebarNavItem extends NavItemDescriptor {
+  icon: IconType;
+}
+
+const ALL_NAV_ITEMS: SidebarNavItem[] = [
   { icon: MdDashboard, label: "Dashboard", href: "/" },
   { icon: MdShowChart, label: "Webhook Strategies", href: "/strategies" },
   { icon: MdCode, label: "Hosted Strategies", href: "/strategies/hosted" },
@@ -40,6 +47,13 @@ export function Sidebar() {
   const pathname = usePathname();
   const bg = useColorModeValue("white", "gray.800");
   const borderColor = useColorModeValue("gray.200", "gray.700");
+  const { paperTrading, backtesting } = useFeatureFlags();
+
+  const NAV_ITEMS = useMemo(
+    () => filterNavItems(ALL_NAV_ITEMS, { paperTrading, backtesting }),
+    [paperTrading, backtesting],
+  );
+
   return (
     <Box
       as="nav"
