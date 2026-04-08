@@ -29,7 +29,14 @@ export default function BrokerDetailPage() {
       </Flex>
 
       <Flex align="center" gap={3} mb={6}>
-        <Heading size="lg">{broker?.broker_type ?? id}</Heading>
+        <Box>
+          <Heading size="lg">{broker?.label ?? id}</Heading>
+          {broker && (
+            <Text fontSize="xs" color="gray.500" textTransform="uppercase">
+              {broker.broker_type}
+            </Text>
+          )}
+        </Box>
         {broker && (
           <Badge colorScheme={broker.is_active ? "green" : "gray"}>
             {broker.is_active ? "Connected" : "Inactive"}

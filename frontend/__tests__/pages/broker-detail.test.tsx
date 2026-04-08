@@ -24,16 +24,22 @@ jest.mock("@/components/brokers/BrokerTradesTable", () => ({
 describe("BrokerDetailPage", () => {
   beforeEach(() => {
     (useApiModule.useBrokers as jest.Mock).mockReturnValue({
-      data: [{ id: "broker-abc", broker_type: "exchange1", is_active: true, connected_at: "2026-01-01" }],
+      data: [{
+        id: "broker-abc",
+        broker_type: "exchange1",
+        label: "Main Ex1",
+        is_active: true,
+        connected_at: "2026-01-01",
+      }],
       isLoading: false,
     });
     (useApiModule.useBrokerPositions as jest.Mock).mockReturnValue({ data: [], isLoading: false });
     (useApiModule.useBrokerOrders as jest.Mock).mockReturnValue({ data: [], isLoading: false });
   });
 
-  it("renders broker name in heading", () => {
+  it("renders broker label in heading", () => {
     render(<ChakraProvider><BrokerDetailPage /></ChakraProvider>);
-    expect(screen.getByText(/exchange1/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Main Ex1" })).toBeInTheDocument();
   });
 
   it("renders stats bar", () => {
