@@ -37,6 +37,8 @@ ORDER_TYPE_MAP = {
     "limit": "LIMIT",
     "stop": "SL-M",
     "stop_limit": "SL",
+    "sl-m": "SL-M",
+    "sl": "SL",
 }
 
 
@@ -149,6 +151,7 @@ async def place_manual_trade(
         position_model=body.position_model,
         take_profit=Decimal(str(body.take_profit)) if body.take_profit is not None else None,
         stop_loss=Decimal(str(body.stop_loss)) if body.stop_loss is not None else None,
+        position_side=body.position_side,
     )
 
     try:

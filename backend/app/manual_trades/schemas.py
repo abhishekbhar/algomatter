@@ -15,6 +15,7 @@ class PlaceManualTradeRequest(BaseModel):
     position_model: str | None = None
     take_profit: float | None = None
     stop_loss: float | None = None
+    position_side: str | None = None
 
 
 class ManualTradeResponse(BaseModel):

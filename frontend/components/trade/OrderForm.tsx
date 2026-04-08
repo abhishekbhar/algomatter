@@ -30,7 +30,7 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
   const [stopLoss, setStopLoss] = useState("");
   const [triggerPrice, setTriggerPrice] = useState("");
   const [leverage, setLeverage] = useState(1);
-  const [positionModel, setPositionModel] = useState("isolated");
+  const [positionModel, setPositionModel] = useState("cross");
   const [loading, setLoading] = useState(false);
 
   const { data: balance } = useBrokerBalance(selectedBrokerId || null, productType);
@@ -85,6 +85,9 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
       if (productType === "FUTURES") {
         body.leverage = leverage;
         body.position_model = positionModel;
+        if (action === "SELL" && caps?.shortFutures) {
+          body.position_side = "short";
+        }
       }
       await apiClient("/api/v1/trades/manual", { method: "POST", body });
       toast({ title: "Order placed", status: "success", duration: 2000 });
