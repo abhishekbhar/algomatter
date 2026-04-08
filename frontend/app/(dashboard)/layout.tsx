@@ -1,6 +1,7 @@
 "use client";
 import { Flex, Box, Spinner, Center } from "@chakra-ui/react";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useFeatureFlags } from "@/lib/contexts/FeatureFlagsContext";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -11,14 +12,15 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
+  const { isLoading: flagsLoading } = useFeatureFlags();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && !user) router.push("/login");
-  }, [isLoading, user, router]);
+    if (!authLoading && !user) router.push("/login");
+  }, [authLoading, user, router]);
 
-  if (isLoading)
+  if (authLoading || flagsLoading)
     return (
       <Center h="100vh">
         <Spinner size="xl" />
