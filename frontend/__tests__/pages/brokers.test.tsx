@@ -23,7 +23,7 @@ describe("BrokersPage", () => {
       data: [{
         id: "1",
         broker_type: "zerodha",
-        label: "Main Zerodha",
+        label: "Main Account",
         is_active: true,
         connected_at: "2026-01-01",
       }],
@@ -31,7 +31,7 @@ describe("BrokersPage", () => {
       mutate: jest.fn(),
     });
     render(<ChakraProvider><BrokersPage /></ChakraProvider>);
-    expect(screen.getByText("Main Zerodha")).toBeInTheDocument();
+    expect(screen.getByText("Main Account")).toBeInTheDocument();
     expect(screen.getByText(/zerodha/i)).toBeInTheDocument(); // subtitle
     expect(screen.getByText("Add Broker")).toBeInTheDocument();
   });
