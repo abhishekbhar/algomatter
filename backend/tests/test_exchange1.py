@@ -347,6 +347,38 @@ class TestOrders:
         assert resp.status == "rejected"
         assert "500" in resp.message
 
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_futures_take_profit_rejected_before_api(self):
+        """take_profit on futures → rejected with no HTTP call made."""
+        broker = _make_authenticated_broker()
+        order = OrderRequest(
+            symbol="BTCUSDT", exchange="EXCHANGE1", action="BUY",
+            quantity=Decimal("1"), order_type="LIMIT", price=Decimal("65000"),
+            product_type="FUTURES", take_profit=Decimal("70000"),
+        )
+        resp = await broker.place_order(order)
+        await broker.close()
+
+        assert resp.status == "rejected"
+        assert "take_profit" in resp.message.lower()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_futures_stop_loss_rejected_before_api(self):
+        """stop_loss on futures → rejected with no HTTP call made."""
+        broker = _make_authenticated_broker()
+        order = OrderRequest(
+            symbol="BTCUSDT", exchange="EXCHANGE1", action="BUY",
+            quantity=Decimal("1"), order_type="LIMIT", price=Decimal("65000"),
+            product_type="FUTURES", stop_loss=Decimal("62000"),
+        )
+        resp = await broker.place_order(order)
+        await broker.close()
+
+        assert resp.status == "rejected"
+        assert "stop_loss" in resp.message.lower()
+
 
 # ---------------------------------------------------------------------------
 # Cancel & Status

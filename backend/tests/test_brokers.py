@@ -421,3 +421,95 @@ async def test_exchange1_close_short_routes_to_close():
     assert body["closeType"] == "all"
     assert resp.status == "filled"
     assert resp.order_id == "futures:market:btc:200002"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_take_profit_rejected():
+    """take_profit on a futures order → rejected before any API call."""
+    broker = _make_exchange1()
+
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="exchange1", action="BUY",
+        quantity=Decimal("1"), order_type="LIMIT", price=Decimal("65000"),
+        product_type="FUTURES", take_profit=Decimal("70000"),
+    )
+    resp = await broker.place_order(order)
+
+    broker._post.assert_not_called()
+    assert resp.status == "rejected"
+    assert "take_profit" in resp.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_stop_loss_rejected():
+    """stop_loss on a futures order → rejected before any API call."""
+    broker = _make_exchange1()
+
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="exchange1", action="BUY",
+        quantity=Decimal("1"), order_type="LIMIT", price=Decimal("65000"),
+        product_type="FUTURES", stop_loss=Decimal("62000"),
+    )
+    resp = await broker.place_order(order)
+
+    broker._post.assert_not_called()
+    assert resp.status == "rejected"
+    assert "stop_loss" in resp.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_sl_order_type_sends_price():
+    """order_type='SL' maps to positionType='limit' and must include price."""
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "300001"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="exchange1", action="BUY",
+        quantity=Decimal("1"), order_type="SL", price=Decimal("58000"),
+        product_type="FUTURES", leverage=10, position_model="cross",
+        trigger_price=Decimal("59000"),
+    )
+    resp = await broker.place_order(order)
+
+    body = broker._post.call_args.kwargs["body"]
+    assert body["positionType"] == "limit"
+    assert body["price"] == "58000"
+    assert resp.status == "open"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_sl_m_order_type_sends_price():
+    """order_type='SL-M' maps to positionType='limit' and must include price."""
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "300002"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="exchange1", action="BUY",
+        quantity=Decimal("1"), order_type="SL-M", price=Decimal("57000"),
+        product_type="FUTURES", leverage=10, position_model="cross",
+    )
+    resp = await broker.place_order(order)
+
+    body = broker._post.call_args.kwargs["body"]
+    assert body["positionType"] == "limit"
+    assert body["price"] == "57000"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_futures_partial_close_uses_trigger_price_as_position_id():
+    """trigger_price on a close order → closeType=<position_id>, closeNum set."""
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "300003"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="exchange1", action="SELL",
+        quantity=Decimal("2"), order_type="MARKET", price=Decimal("0"),
+        product_type="FUTURES",
+        trigger_price=Decimal("700340577325424640"),  # position ID from Exchange1
+    )
+    resp = await broker.place_order(order)
+
+    body = broker._post.call_args.kwargs["body"]
+    assert body["closeType"] == "700340577325424640"
+    assert body["closeNum"] == "2"
+    assert resp.status == "filled"
