@@ -16,6 +16,7 @@ from app.brokers.schemas import (
     BrokerPositionResponse,
     BrokerStatsResponse,
     CreateBrokerConnectionRequest,
+    UpdateBrokerConnectionRequest,
 )
 from app.crypto.encryption import decrypt_credentials
 from app.brokers.factory import get_broker
@@ -101,6 +102,47 @@ async def list_broker_connections(
         )
         for c in connections
     ]
+
+
+@router.patch("/{connection_id}", response_model=BrokerConnectionResponse)
+async def update_broker_connection(
+    connection_id: uuid.UUID,
+    body: UpdateBrokerConnectionRequest,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    result = await session.execute(
+        select(BrokerConnection).where(
+            BrokerConnection.id == connection_id,
+            BrokerConnection.tenant_id == tenant_id,
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Broker connection not found",
+        )
+
+    conn.label = body.label
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A broker connection with this label already exists",
+        )
+    await session.refresh(conn)
+
+    return BrokerConnectionResponse(
+        id=conn.id,
+        broker_type=conn.broker_type,
+        label=conn.label,
+        is_active=conn.is_active,
+        connected_at=conn.connected_at,
+    )
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)

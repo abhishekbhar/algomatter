@@ -519,6 +519,176 @@ async def test_list_broker_connections_includes_label(client):
     assert rows[0]["label"] == "Main Account"
 
 
+@pytest.mark.asyncio
+async def test_patch_broker_connection_renames_label(client):
+    tokens = await create_authenticated_user(client, email="rename@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    create = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "label": "Original",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers,
+    )
+    conn_id = create.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/brokers/{conn_id}",
+        json={"label": "Renamed"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == conn_id
+    assert body["label"] == "Renamed"
+    assert "credentials" not in body
+
+
+@pytest.mark.asyncio
+async def test_patch_broker_connection_trims_label(client):
+    tokens = await create_authenticated_user(client, email="rename_trim@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    create = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "label": "Pre-trim",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers,
+    )
+    conn_id = create.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/brokers/{conn_id}",
+        json={"label": "   Post-trim   "},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["label"] == "Post-trim"
+
+
+@pytest.mark.asyncio
+async def test_patch_broker_connection_rejects_blank_label(client):
+    tokens = await create_authenticated_user(client, email="rename_blank@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    create = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "label": "Blank Source",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers,
+    )
+    conn_id = create.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/brokers/{conn_id}",
+        json={"label": "   "},
+        headers=headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_broker_connection_rename_to_existing_returns_409(client):
+    tokens = await create_authenticated_user(client, email="rename_conflict@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "label": "Taken",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers,
+    )
+    other = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "label": "Other",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers,
+    )
+    other_id = other.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/brokers/{other_id}",
+        json={"label": "Taken"},
+        headers=headers,
+    )
+    assert resp.status_code == 409
+    assert "already exists" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_patch_broker_connection_rename_to_own_current_label_is_ok(client):
+    tokens = await create_authenticated_user(client, email="rename_self@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    create = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "label": "Self",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers,
+    )
+    conn_id = create.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/brokers/{conn_id}",
+        json={"label": "Self"},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["label"] == "Self"
+
+
+@pytest.mark.asyncio
+async def test_patch_broker_connection_not_found_returns_404(client):
+    tokens = await create_authenticated_user(client, email="rename_missing@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    resp = await client.patch(
+        "/api/v1/brokers/00000000-0000-0000-0000-000000000000",
+        json={"label": "Nope"},
+        headers=headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_broker_connection_other_tenant_returns_404(client):
+    tokens_a = await create_authenticated_user(client, email="cross_a@test.com")
+    tokens_b = await create_authenticated_user(client, email="cross_b@test.com")
+    headers_a = {"Authorization": f"Bearer {tokens_a['access_token']}"}
+    headers_b = {"Authorization": f"Bearer {tokens_b['access_token']}"}
+
+    create_a = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "zerodha",
+            "label": "A's broker",
+            "credentials": {"api_key": "xxx", "api_secret": "yyy"},
+        },
+        headers=headers_a,
+    )
+    a_id = create_a.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/brokers/{a_id}",
+        json={"label": "Hijacked"},
+        headers=headers_b,
+    )
+    assert resp.status_code == 404
+
+
 # -----------------------------------------------------------------------------
 # validate_label — schema-layer unit tests
 # -----------------------------------------------------------------------------
