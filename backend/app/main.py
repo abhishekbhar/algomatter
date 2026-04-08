@@ -11,6 +11,7 @@ from app.auth.router import router as auth_router
 from app.backtesting.router import router as backtest_router
 from app.brokers.router import router as broker_router
 from app.config import settings
+from app.config_router import router as config_router
 from app.db.session import async_session_factory
 from app.deployments.router import router as deployment_router
 from app.historical.router import router as historical_router
@@ -65,6 +66,7 @@ app.include_router(hosted_strategy_router)
 app.include_router(template_router)
 app.include_router(deployment_router)
 app.include_router(manual_trades_router)
+app.include_router(config_router)
 
 
 @app.get("/api/v1/health")
