@@ -229,9 +229,9 @@ class Exchange1Broker(BrokerAdapter):
         """Place a spot or futures order on Exchange1.
 
         Routing:
-          product_type == "FUTURES", BUY  →  /openapi/v1/futures/order/create (open long)
-          product_type == "FUTURES", SELL →  /openapi/v1/futures/order/close  (close long)
-          all others                       →  /openapi/v1/spot/order/create|close
+          product_type == "FUTURES"  →  see `_place_futures_order` dispatch table
+                                        (long open, short open, long close, short close)
+          all others                 →  /openapi/v1/spot/order/create|close
         """
         if order.product_type == "FUTURES":
             return await self._place_futures_order(order)
