@@ -45,8 +45,11 @@ _BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.3
 
 _STATUS_MAP: dict[str, str] = {
     "new": "open",
+    "entry": "open",
+    "freezed": "open",
     "partially_filled": "open",
     "filled": "filled",
+    "transacted": "filled",
     "cancelled": "cancelled",
     "canceled": "cancelled",
     "rejected": "rejected",
@@ -459,7 +462,7 @@ class Exchange1Broker(BrokerAdapter):
         )
         detail = data.get("data", {})
 
-        state = detail.get("state", "")
+        state = detail.get("state", "").lower()
         status = _STATUS_MAP.get(state, "open")
 
         fill_price_raw = detail.get("tradePrice") or detail.get("estimatedPrice")

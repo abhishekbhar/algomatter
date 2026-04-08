@@ -580,6 +580,71 @@ class TestCancelAndStatus:
 
         assert status.status == "open"
 
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_order_status_uppercase_entry_maps_to_open(self):
+        """Exchange1 returns uppercase 'ENTRY' for an open order."""
+        respx.get(f"{BASE_URL}/openapi/v1/spot/order/detail").mock(
+            return_value=httpx.Response(200, json={
+                "code": 200,
+                "data": {
+                    "id": "855200",
+                    "state": "ENTRY",
+                    "quantity": "0.001",
+                },
+            })
+        )
+
+        broker = _make_authenticated_broker()
+        status = await broker.get_order_status("855200")
+        await broker.close()
+
+        assert status.status == "open"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_order_status_uppercase_transacted_maps_to_filled(self):
+        """Exchange1 returns uppercase 'TRANSACTED' for a filled order."""
+        respx.get(f"{BASE_URL}/openapi/v1/spot/order/detail").mock(
+            return_value=httpx.Response(200, json={
+                "code": 200,
+                "data": {
+                    "id": "855201",
+                    "state": "TRANSACTED",
+                    "tradePrice": "66000.00",
+                    "doneQuantity": "0.001",
+                    "quantity": "0.001",
+                },
+            })
+        )
+
+        broker = _make_authenticated_broker()
+        status = await broker.get_order_status("855201")
+        await broker.close()
+
+        assert status.status == "filled"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_order_status_uppercase_new_maps_to_open(self):
+        """Exchange1 returns uppercase 'NEW' for an unfilled order."""
+        respx.get(f"{BASE_URL}/openapi/v1/spot/order/detail").mock(
+            return_value=httpx.Response(200, json={
+                "code": 200,
+                "data": {
+                    "id": "855202",
+                    "state": "NEW",
+                    "quantity": "0.001",
+                },
+            })
+        )
+
+        broker = _make_authenticated_broker()
+        status = await broker.get_order_status("855202")
+        await broker.close()
+
+        assert status.status == "open"
+
 
 # ---------------------------------------------------------------------------
 # Portfolio / Balance
