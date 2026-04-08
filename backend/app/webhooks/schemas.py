@@ -16,5 +16,6 @@ class StandardSignal(BaseModel):
     # Futures-specific settings (ignored for spot orders)
     leverage: Optional[int] = None          # e.g. 20 → "20X"
     position_model: Optional[str] = None    # "isolated" or "cross"
+    position_side: Optional[str] = None     # "long" or "short" (Exchange1 routing)
     take_profit: Optional[Decimal] = None   # TP price
     stop_loss: Optional[Decimal] = None     # SL price

@@ -147,6 +147,7 @@ async def receive_webhook(
                                 trigger_price=signal.trigger_price,
                                 leverage=signal.leverage,
                                 position_model=signal.position_model,
+                                position_side=signal.position_side,
                                 take_profit=signal.take_profit,
                                 stop_loss=signal.stop_loss,
                             )

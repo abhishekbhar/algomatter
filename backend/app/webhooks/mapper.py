@@ -22,6 +22,8 @@ def apply_mapping(payload: dict, template: dict) -> StandardSignal:
 
     # Normalize
     resolved["action"] = str(resolved["action"]).upper()
+    if resolved.get("order_type"):
+        resolved["order_type"] = str(resolved["order_type"]).upper()
     resolved["quantity"] = Decimal(str(resolved["quantity"]))
     for decimal_field in ("price", "trigger_price", "take_profit", "stop_loss"):
         if resolved.get(decimal_field):
