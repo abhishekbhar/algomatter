@@ -1,14 +1,16 @@
 "use client";
 import {
-  Box, Heading, Flex, Button, SimpleGrid, Card, CardHeader, CardBody, CardFooter,
+  Box, Heading, Flex, Button, IconButton, SimpleGrid, Card, CardHeader, CardBody, CardFooter,
   Text, useDisclosure, useToast,
 } from "@chakra-ui/react";
+import { MdEdit } from "react-icons/md";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { RenameBrokerModal } from "@/components/brokers/RenameBrokerModal";
 import { useBrokers } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatDate } from "@/lib/utils/formatters";
@@ -17,8 +19,10 @@ export default function BrokersPage() {
   const router = useRouter();
   const toast = useToast();
   const { data: brokers, isLoading, mutate } = useBrokers();
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const deleteDisclosure = useDisclosure();
+  const renameDisclosure = useDisclosure();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{ id: string; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const handleDelete = async () => {
@@ -33,7 +37,7 @@ export default function BrokersPage() {
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
-      onClose();
+      deleteDisclosure.onClose();
     }
   };
 
@@ -72,8 +76,13 @@ export default function BrokersPage() {
           <Link key={broker.id} href={`/brokers/${broker.id}`} style={{ textDecoration: "none" }}>
             <Card _hover={{ borderColor: "blue.400", cursor: "pointer" }} transition="border-color 0.15s">
               <CardHeader pb={2}>
-                <Flex justify="space-between" align="center">
-                  <Text fontWeight="bold" fontSize="lg">{broker.broker_type}</Text>
+                <Flex justify="space-between" align="start">
+                  <Box>
+                    <Text fontWeight="bold" fontSize="lg">{broker.label}</Text>
+                    <Text fontSize="xs" color="gray.500" textTransform="uppercase">
+                      {broker.broker_type}
+                    </Text>
+                  </Box>
                   <StatusBadge
                     variant={broker.is_active ? "success" : "neutral"}
                     text={broker.is_active ? "Active" : "Inactive"}
@@ -85,12 +94,23 @@ export default function BrokersPage() {
                   Connected: {formatDate(broker.connected_at)}
                 </Text>
               </CardBody>
-              <CardFooter pt={2}>
+              <CardFooter pt={2} gap={2}>
+                <IconButton
+                  aria-label="Rename broker"
+                  icon={<MdEdit />}
+                  size="xs"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setRenameTarget({ id: broker.id, label: broker.label });
+                    renameDisclosure.onOpen();
+                  }}
+                />
                 <Button
                   size="xs"
                   colorScheme="red"
                   variant="ghost"
-                  onClick={(e) => { e.preventDefault(); setDeleteTarget(broker.id); onOpen(); }}
+                  onClick={(e) => { e.preventDefault(); setDeleteTarget(broker.id); deleteDisclosure.onOpen(); }}
                 >
                   Delete
                 </Button>
@@ -101,14 +121,30 @@ export default function BrokersPage() {
       </SimpleGrid>
 
       <ConfirmModal
-        isOpen={isOpen}
-        onClose={() => { setDeleteTarget(null); onClose(); }}
+        isOpen={deleteDisclosure.isOpen}
+        onClose={() => { setDeleteTarget(null); deleteDisclosure.onClose(); }}
         onConfirm={handleDelete}
         title="Delete Broker"
         message="Are you sure you want to delete this broker connection? This action cannot be undone."
         confirmLabel="Delete"
         isLoading={deleting}
       />
+
+      {renameTarget && (
+        <RenameBrokerModal
+          isOpen={renameDisclosure.isOpen}
+          onClose={() => {
+            setRenameTarget(null);
+            renameDisclosure.onClose();
+          }}
+          onRenamed={() => {
+            mutate();
+            toast({ title: "Broker renamed", status: "success", duration: 3000 });
+          }}
+          connectionId={renameTarget.id}
+          currentLabel={renameTarget.label}
+        />
+      )}
     </Box>
   );
 }
