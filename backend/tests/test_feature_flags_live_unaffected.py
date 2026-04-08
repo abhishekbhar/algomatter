@@ -48,11 +48,20 @@ async def test_live_deployment_creation_reaches_broker_check_when_flags_off(
         headers=headers,
     )
 
-    # Must NOT be 403 (that would mean a flag is over-gating live mode).
-    # Expect 400 from the existing "broker_connection_id required" check.
+    # Regression guard (THE point of this test):
     assert resp.status_code != 403, (
         f"live deployment got 403 — feature flags are over-gating "
         f"the live path: {resp.json()}"
     )
-    assert resp.status_code == 400
-    assert "broker_connection_id" in resp.json()["detail"]
+
+    # Sanity: confirm we actually reached live-mode-specific logic.
+    # 400 = current inline check; 422 = schema-level validation (acceptable future refactor).
+    assert resp.status_code in (400, 422), (
+        f"unexpected status {resp.status_code}; expected broker_connection_id error "
+        f"(400 from router inline check or 422 from schema validation): {resp.json()}"
+    )
+    detail = resp.json().get("detail", "")
+    # detail is str for HTTPException, list for 422 — coerce to searchable text
+    assert "broker_connection_id" in str(detail), (
+        f"expected broker_connection_id in error detail: {detail}"
+    )
