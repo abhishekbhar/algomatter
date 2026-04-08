@@ -493,6 +493,7 @@ async def test_exchange1_futures_sl_m_order_type_sends_price():
     body = broker._post.call_args.kwargs["body"]
     assert body["positionType"] == "limit"
     assert body["price"] == "57000"
+    assert resp.status == "open"
 
 
 @pytest.mark.asyncio
