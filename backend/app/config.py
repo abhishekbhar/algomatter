@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     master_key: str = "change-me"
     rate_limit_per_minute: int = 60
     max_webhook_payload_bytes: int = 65536
+    enable_paper_trading: bool = True
+    enable_backtesting: bool = True
 
     model_config = {"env_prefix": "ALGOMATTER_", "env_file": ".env"}
 
