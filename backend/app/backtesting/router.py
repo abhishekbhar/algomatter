@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user, get_tenant_session
 from app.backtesting.engine import run_backtest
 from app.db.models import Strategy, StrategyCode, StrategyDeployment, StrategyResult
+from app.feature_flags import require_backtesting_enabled
 
 router = APIRouter(prefix="/api/v1/backtests", tags=["backtests"])
 
@@ -105,7 +106,12 @@ def _model_to_response(row: StrategyResult, strategy_name: str | None = None) ->
 # ---------------------------------------------------------------------------
 
 
-@router.post("", status_code=status.HTTP_201_CREATED, response_model=BacktestResponse)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    response_model=BacktestResponse,
+    dependencies=[Depends(require_backtesting_enabled)],
+)
 async def create_backtest(
     body: CreateBacktestRequest,
     current_user: dict = Depends(get_current_user),
@@ -215,7 +221,11 @@ async def get_backtest(
     return _model_to_response(row)
 
 
-@router.delete("/{backtest_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{backtest_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_backtesting_enabled)],
+)
 async def delete_backtest(
     backtest_id: uuid.UUID,
     current_user: dict = Depends(get_current_user),
