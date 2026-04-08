@@ -376,3 +376,48 @@ async def test_exchange1_buy_explicit_long_side():
     assert body["positionSide"] == "long"
     assert resp.status == "filled"
     assert resp.order_id == "futures:market:btc:100002"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_open_short_routes_to_create_with_short_side():
+    """SELL + position_side='short' → /futures/order/create with positionSide=short."""
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "200001"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="exchange1", action="SELL",
+        quantity=Decimal("1"), order_type="LIMIT", price=Decimal("80000"),
+        product_type="FUTURES", leverage=5, position_model="cross",
+        position_side="short",
+    )
+    resp = await broker.place_order(order)
+
+    call_args = broker._post.call_args
+    assert call_args.args[0] == "/openapi/v1/futures/order/create"
+    body = call_args.kwargs["body"]
+    assert body["positionSide"] == "short"
+    assert body["positionModel"] == "cross"
+    assert body["price"] == "80000"
+    assert resp.status == "open"
+    assert resp.order_id == "futures:limit:btc:200001"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_close_short_routes_to_close():
+    """BUY + position_side='short' → /futures/order/close (close the short)."""
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "200002"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="exchange1", action="BUY",
+        quantity=Decimal("1"), order_type="MARKET", price=Decimal("0"),
+        product_type="FUTURES", position_side="short",
+    )
+    resp = await broker.place_order(order)
+
+    call_args = broker._post.call_args
+    assert call_args.args[0] == "/openapi/v1/futures/order/close"
+    body = call_args.kwargs["body"]
+    assert body["closeType"] == "all"
+    assert resp.status == "filled"
+    assert resp.order_id == "futures:market:btc:200002"
