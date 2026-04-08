@@ -52,7 +52,7 @@ export function TradeHistory({ onTradeUpdate }: Props) {
                   <Td><Badge colorScheme={t.action === "BUY" ? "green" : "red"} size="sm">{t.action}</Badge></Td>
                   <Td>{t.order_type}</Td>
                   <Td isNumeric>{t.fill_price ? t.fill_price.toLocaleString() : t.price ? t.price.toLocaleString() : "MKT"}</Td>
-                  <Td isNumeric>{t.fill_quantity ?? t.quantity}</Td>
+                  <Td isNumeric>{t.fill_quantity || t.quantity}</Td>
                   <Td><Badge colorScheme={t.status === "filled" ? "green" : t.status === "open" ? "blue" : t.status === "cancelled" ? "gray" : "red"} size="sm">{t.status}</Badge></Td>
                   {tab === "open" && (<Td><Button size="xs" colorScheme="red" variant="ghost" onClick={() => handleCancel(t.id)}>Cancel</Button></Td>)}
                 </Tr>

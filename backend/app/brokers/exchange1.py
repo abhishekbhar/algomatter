@@ -390,8 +390,12 @@ class Exchange1Broker(BrokerAdapter):
 
         raw_id = str(data.get("data", ""))
         order_id = _encode_futures_order_id(raw_id, symbol, position_type) if raw_id else ""
-        status = "filled" if order.order_type == "MARKET" else "open"
-        return OrderResponse(order_id=order_id, status=status, fill_price=Decimal("0"), fill_quantity=Decimal("0"))
+        if order.order_type == "MARKET":
+            return OrderResponse(
+                order_id=order_id, status="filled",
+                fill_price=Decimal("0"), fill_quantity=order.quantity,
+            )
+        return OrderResponse(order_id=order_id, status="open", fill_price=Decimal("0"), fill_quantity=Decimal("0"))
 
     async def _close_futures(self, order: OrderRequest) -> OrderResponse:
         """Close an existing position via /openapi/v1/futures/order/close.
@@ -429,8 +433,12 @@ class Exchange1Broker(BrokerAdapter):
 
         raw_id = str(data.get("data", ""))
         order_id = _encode_futures_order_id(raw_id, symbol, position_type) if raw_id else ""
-        status = "filled" if order.order_type == "MARKET" else "open"
-        return OrderResponse(order_id=order_id, status=status, fill_price=Decimal("0"), fill_quantity=Decimal("0"))
+        if order.order_type == "MARKET":
+            return OrderResponse(
+                order_id=order_id, status="filled",
+                fill_price=Decimal("0"), fill_quantity=order.quantity,
+            )
+        return OrderResponse(order_id=order_id, status="open", fill_price=Decimal("0"), fill_quantity=Decimal("0"))
 
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel an open order on Exchange1 (spot or futures).

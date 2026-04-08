@@ -193,13 +193,13 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
 
       {productType === "FUTURES" && effectiveCurrentPrice && quantity ? (
         <Box borderTop="1px" borderColor={borderColor} py={2} mb={2} fontSize="xs">
-          <Flex justify="space-between"><Text color="gray.500">Required Margin</Text><Text color="yellow.400">{balancePrefix}{((parseFloat(quantity) * (parseFloat(price) || effectiveCurrentPrice)) / leverage).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text></Flex>
+          <Flex justify="space-between"><Text color="gray.500">Required Margin</Text><Text color="yellow.400">{balancePrefix}{((parseFloat(quantity) * (caps?.futuresContractSize ?? 1) * (parseFloat(price) || effectiveCurrentPrice)) / leverage).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text></Flex>
         </Box>
       ) : null}
 
       {effectiveCurrentPrice && quantity ? (
         <Flex justify="space-between" borderTop="1px" borderColor={borderColor} py={2} mb={3} fontSize="xs">
-          <Text color="gray.500">Total</Text><Text fontWeight="semibold">{balancePrefix}{(parseFloat(quantity) * (parseFloat(price) || effectiveCurrentPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text>
+          <Text color="gray.500">Total</Text><Text fontWeight="semibold">{balancePrefix}{(parseFloat(quantity) * (productType === "FUTURES" ? (caps?.futuresContractSize ?? 1) : 1) * (parseFloat(price) || effectiveCurrentPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text>
         </Flex>
       ) : null}
 
