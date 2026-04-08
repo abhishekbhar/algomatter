@@ -47,6 +47,13 @@ describe("Sidebar", () => {
     });
     expect(screen.getByText("Backtest Deployments")).toBeInTheDocument();
     expect(screen.getByText("Backtesting")).toBeInTheDocument();
+    // Guard against the test being tautological with the fail-open default:
+    // confirm the provider actually fired its config fetch.
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/config"),
+      );
+    });
   });
 
   it("hides Paper Trading tab when paperTrading flag is off", async () => {
