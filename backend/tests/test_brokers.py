@@ -333,3 +333,46 @@ async def test_exchange1_futures_order_status_filled_when_absent():
 
     assert status.status == "filled"
     assert status.order_id == "futures:999"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_buy_long_routes_to_create_with_long_side():
+    """BUY + position_side=None (default) → /futures/order/create with positionSide=long."""
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "100001"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="exchange1", action="BUY",
+        quantity=Decimal("1"), order_type="LIMIT", price=Decimal("60000"),
+        product_type="FUTURES", leverage=10, position_model="cross",
+    )
+    resp = await broker.place_order(order)
+
+    call_args = broker._post.call_args
+    assert call_args.args[0] == "/openapi/v1/futures/order/create"
+    body = call_args.kwargs["body"]
+    assert body["positionSide"] == "long"
+    assert body["positionModel"] == "cross"
+    assert body["leverage"] == "10"
+    assert body["price"] == "60000"
+    assert resp.status == "open"
+    assert resp.order_id == "futures:limit:btc:100001"
+
+
+@pytest.mark.asyncio
+async def test_exchange1_buy_explicit_long_side():
+    """BUY + position_side='long' → same as default."""
+    broker = _make_exchange1()
+    broker._post.return_value = {"data": "100002"}
+
+    order = OrderRequest(
+        symbol="BTCUSDT", exchange="exchange1", action="BUY",
+        quantity=Decimal("1"), order_type="MARKET", price=Decimal("0"),
+        product_type="FUTURES", position_side="long",
+    )
+    resp = await broker.place_order(order)
+
+    body = broker._post.call_args.kwargs["body"]
+    assert body["positionSide"] == "long"
+    assert resp.status == "filled"
+    assert resp.order_id == "futures:market:btc:100002"

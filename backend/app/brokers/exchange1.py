@@ -282,12 +282,19 @@ class Exchange1Broker(BrokerAdapter):
     async def _place_futures_order(self, order: OrderRequest) -> OrderResponse:
         """Perpetual futures order routing.
 
-        BUY  → open long  via POST /openapi/v1/futures/order/create
-        SELL → close long via POST /openapi/v1/futures/order/close
+        Dispatch table (position_side defaults to 'long' when None):
+
+          BUY  + long  → _open_futures(order, 'long')   open long
+          SELL + short → _open_futures(order, 'short')  open short
+          SELL + long  → _close_futures(order)           close long
+          BUY  + short → _close_futures(order)           close short
         """
-        if order.action == "BUY":
-            return await self._open_futures_long(order)
-        return await self._close_futures_position(order)
+        side = order.position_side or "long"
+        if order.action == "BUY" and side == "long":
+            return await self._open_futures(order, "long")
+        if order.action == "SELL" and side == "short":
+            return await self._open_futures(order, "short")
+        return await self._close_futures(order)
 
     @staticmethod
     def _api_position_model(position_model: str | None) -> str:
@@ -305,12 +312,7 @@ class Exchange1Broker(BrokerAdapter):
 
     @staticmethod
     def _translate_futures_error(raw: str) -> str:
-        """Turn cryptic Exchange1 error codes into actionable messages.
-
-        Exchange1 returns ``"9257 null"`` when the account has no isolated
-        margin wallet for the requested symbol. The raw error is useless
-        to end users, so we rewrite it.
-        """
+        """Turn cryptic Exchange1 error codes into actionable messages."""
         if "9257" in raw:
             return (
                 "Exchange1 rejected the order (9257): no isolated-margin wallet "
@@ -319,17 +321,34 @@ class Exchange1Broker(BrokerAdapter):
             )
         return raw
 
-    async def _open_futures_long(self, order: OrderRequest) -> OrderResponse:
-        """Open a new long position via /openapi/v1/futures/order/create."""
+    async def _open_futures(self, order: OrderRequest, position_side: str) -> OrderResponse:
+        """Open a new long or short position via /openapi/v1/futures/order/create.
+
+        position_side must be 'long' or 'short'.
+        """
+        if order.take_profit:
+            return OrderResponse(
+                order_id="", status="rejected",
+                message=(
+                    "Exchange1 does not support take_profit at order creation time. "
+                    "Remove it or configure TP on the Exchange1 platform after the order is placed."
+                ),
+            )
+        if order.stop_loss:
+            return OrderResponse(
+                order_id="", status="rejected",
+                message=(
+                    "Exchange1 does not support stop_loss at order creation time. "
+                    "Remove it or configure SL on the Exchange1 platform after the order is placed."
+                ),
+            )
+
         symbol = self._futures_symbol(order.symbol)
         position_type = "market" if order.order_type == "MARKET" else "limit"
         pos_model = self._api_position_model(order.position_model)
 
-        # Exchange1 rejects LIMIT orders without a price with a cryptic
-        # "9257 null" — fail loudly at the adapter so callers get a clear
-        # message instead of a server-side code.
-        if order.order_type == "LIMIT" and (order.price is None or order.price <= 0):
-            msg = "LIMIT futures order requires a positive price"
+        if order.order_type != "MARKET" and (order.price is None or order.price <= 0):
+            msg = "Non-MARKET futures order requires a positive price"
             logger.error(
                 "exchange1_futures_open_rejected",
                 symbol=symbol, position_type=position_type, error=msg,
@@ -339,18 +358,14 @@ class Exchange1Broker(BrokerAdapter):
         body: dict[str, Any] = {
             "symbol": symbol,
             "positionType": position_type,
-            "positionSide": "long",
+            "positionSide": position_side,
             "quantity": str(order.quantity),
             "quantityUnit": "cont",
             "positionModel": pos_model,
         }
         body["leverage"] = str(order.leverage) if order.leverage else "10"
-        if order.order_type == "LIMIT":
+        if order.order_type != "MARKET":
             body["price"] = str(order.price)
-        if order.take_profit:
-            body["takeProfitPrice"] = str(order.take_profit)
-        if order.stop_loss:
-            body["stopLossPrice"] = str(order.stop_loss)
 
         try:
             data = await self._post("/openapi/v1/futures/order/create", body=body, signed=True)
@@ -360,6 +375,7 @@ class Exchange1Broker(BrokerAdapter):
                 symbol=symbol,
                 position_type=position_type,
                 position_model=pos_model,
+                position_side=position_side,
                 quantity=str(order.quantity),
                 leverage=body["leverage"],
                 error=str(exc),
@@ -374,16 +390,12 @@ class Exchange1Broker(BrokerAdapter):
         status = "filled" if order.order_type == "MARKET" else "open"
         return OrderResponse(order_id=order_id, status=status, fill_price=Decimal("0"), fill_quantity=Decimal("0"))
 
-    async def _close_futures_position(self, order: OrderRequest) -> OrderResponse:
-        """Close an existing long position via /openapi/v1/futures/order/close.
+    async def _close_futures(self, order: OrderRequest) -> OrderResponse:
+        """Close an existing position via /openapi/v1/futures/order/close.
 
-        Uses closeType="all" to close the full position for the symbol.
-        For a partial close, pass the position ID via order.trigger_price
-        (repurposed as a numeric position-id carrier).
-
-        The Exchange1 close endpoint signs only ``{symbol, positionType,
-        closeType}`` (and ``price`` for limit closes); adding any other field
-        produces a ``sign error`` from the server.
+        Full close (default): closeType='all'.
+        Partial close: set order.trigger_price to the position ID returned by
+        /openapi/v1/futures/order/positions; closeNum is set to order.quantity.
         """
         symbol = self._futures_symbol(order.symbol)
         position_type = "market" if order.order_type == "MARKET" else "limit"
@@ -391,9 +403,11 @@ class Exchange1Broker(BrokerAdapter):
         body: dict[str, Any] = {
             "symbol": symbol,
             "positionType": position_type,
-            "closeType": "all",
+            "closeType": str(order.trigger_price) if order.trigger_price else "all",
         }
-        if order.order_type == "LIMIT" and order.price:
+        if order.trigger_price:
+            body["closeNum"] = str(order.quantity)
+        if order.order_type != "MARKET" and order.price:
             body["price"] = str(order.price)
 
         try:
