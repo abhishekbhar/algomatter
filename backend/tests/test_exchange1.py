@@ -385,6 +385,78 @@ class TestCancelAndStatus:
 
     @respx.mock
     @pytest.mark.asyncio
+    async def test_cancel_futures_order_sends_symbol_and_position_type(self):
+        """Futures cancel must include symbol+positionType in body — Exchange1
+        returns "param error" otherwise."""
+        route = respx.post(f"{BASE_URL}/openapi/v1/futures/order/cancel").mock(
+            return_value=httpx.Response(200, json={"code": 200, "msg": "ok", "data": ""})
+        )
+
+        broker = _make_authenticated_broker()
+        result = await broker.cancel_order("futures:limit:btc:1000097167")
+        await broker.close()
+
+        assert result is True
+        body = json.loads(route.calls[0].request.content)
+        assert body == {"id": "1000097167", "symbol": "btc", "positionType": "limit"}
+
+    @pytest.mark.asyncio
+    async def test_cancel_futures_legacy_id_format_raises(self):
+        """Two-part legacy 'futures:{rawId}' ids cannot be cancelled — fail
+        loudly instead of silently sending an unsignable body."""
+        broker = _make_authenticated_broker()
+        with pytest.raises(ValueError, match="Unrecognised Exchange1 futures order id"):
+            await broker.cancel_order("futures:1000097167")
+        await broker.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_open_futures_defaults_to_cross_margin(self):
+        """When no position_model is provided, default to 'cross' — 'fix'
+        (isolated) requires per-symbol wallets that aren't set up out of
+        the box and fails with '9257 null' on most accounts."""
+        route = respx.post(f"{BASE_URL}/openapi/v1/futures/order/create").mock(
+            return_value=httpx.Response(200, json={"code": 200, "msg": "ok", "data": "1000001"})
+        )
+        order = OrderRequest(
+            symbol="BTCUSDT", exchange="EXCHANGE1", action="BUY",
+            quantity=Decimal("1"), order_type="LIMIT", price=Decimal("50000"),
+            product_type="FUTURES", leverage=10,
+            # position_model intentionally omitted
+        )
+        broker = _make_authenticated_broker()
+        resp = await broker.place_order(order)
+        await broker.close()
+        body = json.loads(route.calls[0].request.content)
+        assert body["positionModel"] == "cross"
+        assert resp.status == "open"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_open_futures_9257_translated_to_human_message(self):
+        """Exchange1 returns HTTP 500 with body ``{"data":"9257 null"}`` when
+        the account has no isolated-margin wallet for the symbol. Translate
+        to a user-actionable message."""
+        respx.post(f"{BASE_URL}/openapi/v1/futures/order/create").mock(
+            return_value=httpx.Response(
+                500,
+                json={"code": 500, "msg": "err", "data": "9257 null", "info": None},
+            )
+        )
+        order = OrderRequest(
+            symbol="BTCUSDT", exchange="EXCHANGE1", action="BUY",
+            quantity=Decimal("1"), order_type="LIMIT", price=Decimal("50000"),
+            product_type="FUTURES", leverage=10, position_model="isolated",
+        )
+        broker = _make_authenticated_broker()
+        resp = await broker.place_order(order)
+        await broker.close()
+        assert resp.status == "rejected"
+        assert "isolated" in resp.message.lower()
+        assert "cross" in resp.message.lower()
+
+    @respx.mock
+    @pytest.mark.asyncio
     async def test_get_order_status_filled(self):
         respx.get(f"{BASE_URL}/openapi/v1/spot/order/detail").mock(
             return_value=httpx.Response(200, json={

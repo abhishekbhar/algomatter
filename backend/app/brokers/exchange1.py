@@ -54,6 +54,34 @@ _STATUS_MAP: dict[str, str] = {
 }
 
 
+def _encode_futures_order_id(raw_id: str, symbol: str, position_type: str) -> str:
+    """Encode a futures order id with the metadata needed to cancel it.
+
+    The Exchange1 cancel endpoint signs ``{id, symbol, positionType}`` and
+    rejects requests missing any of those fields with ``param error``. We
+    pack them into a single string so callers (DB, manual_trades, strategy
+    runner) only have to round-trip an opaque identifier.
+    """
+    return f"futures:{position_type}:{symbol}:{raw_id}"
+
+
+def _decode_futures_order_id(order_id: str) -> tuple[str, str, str]:
+    """Inverse of :func:`_encode_futures_order_id`.
+
+    Returns ``(raw_id, symbol, position_type)``. Raises ``ValueError`` for
+    legacy two-part ``futures:{raw_id}`` ids — those cannot be cancelled
+    against the live API and indicate corrupt or stale data.
+    """
+    parts = order_id.split(":")
+    if len(parts) == 4 and parts[0] == "futures":
+        _, position_type, symbol, raw_id = parts
+        return raw_id, symbol, position_type
+    raise ValueError(
+        f"Unrecognised Exchange1 futures order id format: {order_id!r}. "
+        f"Expected 'futures:{{positionType}}:{{symbol}}:{{rawId}}'."
+    )
+
+
 class Exchange1Broker(BrokerAdapter):
     """Adapter for Exchange1 Global spot trading.
 
@@ -233,6 +261,13 @@ class Exchange1Broker(BrokerAdapter):
         try:
             data = await self._post(path, body=body, signed=True)
         except RuntimeError as exc:
+            logger.error(
+                "exchange1_spot_order_rejected",
+                action=order.action,
+                symbol=symbol,
+                order_type=order.order_type,
+                error=str(exc),
+            )
             return OrderResponse(order_id="", status="rejected", message=str(exc))
 
         order_id = str(data.get("data", ""))
@@ -260,17 +295,46 @@ class Exchange1Broker(BrokerAdapter):
 
         "isolated" → "fix"   (Exchange1 term for isolated margin)
         "cross"    → "cross"
-        None/other → "fix"   (safe default: isolated)
+        None/other → "cross" (safe default: 'fix' requires per-symbol
+                               isolated wallets which aren't initialised
+                               by default and triggers a "9257 null" error)
         """
-        if position_model and position_model.lower() == "cross":
-            return "cross"
-        return "fix"
+        if position_model and position_model.lower() in ("fix", "isolated"):
+            return "fix"
+        return "cross"
+
+    @staticmethod
+    def _translate_futures_error(raw: str) -> str:
+        """Turn cryptic Exchange1 error codes into actionable messages.
+
+        Exchange1 returns ``"9257 null"`` when the account has no isolated
+        margin wallet for the requested symbol. The raw error is useless
+        to end users, so we rewrite it.
+        """
+        if "9257" in raw:
+            return (
+                "Exchange1 rejected the order (9257): no isolated-margin wallet "
+                "for this symbol. Fund the isolated wallet on Exchange1 or "
+                "switch the order to Cross margin."
+            )
+        return raw
 
     async def _open_futures_long(self, order: OrderRequest) -> OrderResponse:
         """Open a new long position via /openapi/v1/futures/order/create."""
         symbol = self._futures_symbol(order.symbol)
         position_type = "market" if order.order_type == "MARKET" else "limit"
         pos_model = self._api_position_model(order.position_model)
+
+        # Exchange1 rejects LIMIT orders without a price with a cryptic
+        # "9257 null" — fail loudly at the adapter so callers get a clear
+        # message instead of a server-side code.
+        if order.order_type == "LIMIT" and (order.price is None or order.price <= 0):
+            msg = "LIMIT futures order requires a positive price"
+            logger.error(
+                "exchange1_futures_open_rejected",
+                symbol=symbol, position_type=position_type, error=msg,
+            )
+            return OrderResponse(order_id="", status="rejected", message=msg)
 
         body: dict[str, Any] = {
             "symbol": symbol,
@@ -281,7 +345,7 @@ class Exchange1Broker(BrokerAdapter):
             "positionModel": pos_model,
         }
         body["leverage"] = str(order.leverage) if order.leverage else "10"
-        if order.order_type == "LIMIT" and order.price:
+        if order.order_type == "LIMIT":
             body["price"] = str(order.price)
         if order.take_profit:
             body["takeProfitPrice"] = str(order.take_profit)
@@ -291,10 +355,22 @@ class Exchange1Broker(BrokerAdapter):
         try:
             data = await self._post("/openapi/v1/futures/order/create", body=body, signed=True)
         except RuntimeError as exc:
-            return OrderResponse(order_id="", status="rejected", message=str(exc))
+            logger.error(
+                "exchange1_futures_open_rejected",
+                symbol=symbol,
+                position_type=position_type,
+                position_model=pos_model,
+                quantity=str(order.quantity),
+                leverage=body["leverage"],
+                error=str(exc),
+            )
+            return OrderResponse(
+                order_id="", status="rejected",
+                message=self._translate_futures_error(str(exc)),
+            )
 
         raw_id = str(data.get("data", ""))
-        order_id = f"futures:{raw_id}" if raw_id else ""
+        order_id = _encode_futures_order_id(raw_id, symbol, position_type) if raw_id else ""
         status = "filled" if order.order_type == "MARKET" else "open"
         return OrderResponse(order_id=order_id, status=status, fill_price=Decimal("0"), fill_quantity=Decimal("0"))
 
@@ -304,6 +380,10 @@ class Exchange1Broker(BrokerAdapter):
         Uses closeType="all" to close the full position for the symbol.
         For a partial close, pass the position ID via order.trigger_price
         (repurposed as a numeric position-id carrier).
+
+        The Exchange1 close endpoint signs only ``{symbol, positionType,
+        closeType}`` (and ``price`` for limit closes); adding any other field
+        produces a ``sign error`` from the server.
         """
         symbol = self._futures_symbol(order.symbol)
         position_type = "market" if order.order_type == "MARKET" else "limit"
@@ -319,18 +399,37 @@ class Exchange1Broker(BrokerAdapter):
         try:
             data = await self._post("/openapi/v1/futures/order/close", body=body, signed=True)
         except RuntimeError as exc:
-            return OrderResponse(order_id="", status="rejected", message=str(exc))
+            logger.error(
+                "exchange1_futures_close_rejected",
+                symbol=symbol,
+                position_type=position_type,
+                error=str(exc),
+            )
+            return OrderResponse(
+                order_id="", status="rejected",
+                message=self._translate_futures_error(str(exc)),
+            )
 
         raw_id = str(data.get("data", ""))
-        order_id = f"futures:{raw_id}" if raw_id else ""
+        order_id = _encode_futures_order_id(raw_id, symbol, position_type) if raw_id else ""
         status = "filled" if order.order_type == "MARKET" else "open"
         return OrderResponse(order_id=order_id, status=status, fill_price=Decimal("0"), fill_quantity=Decimal("0"))
 
     async def cancel_order(self, order_id: str) -> bool:
-        """Cancel an open order on Exchange1 (spot or futures)."""
+        """Cancel an open order on Exchange1 (spot or futures).
+
+        Futures order_ids are encoded as ``futures:{positionType}:{symbol}:{raw_id}``
+        because the Exchange1 cancel endpoint requires ``symbol`` and
+        ``positionType`` in the signed body — without them the server returns
+        ``param error``. We unpack those at cancel time.
+        """
         if order_id.startswith("futures:"):
-            raw_id = order_id[len("futures:"):]
-            await self._post("/openapi/v1/futures/order/cancel", body={"id": raw_id}, signed=True)
+            raw_id, symbol, position_type = _decode_futures_order_id(order_id)
+            await self._post(
+                "/openapi/v1/futures/order/cancel",
+                body={"id": raw_id, "symbol": symbol, "positionType": position_type},
+                signed=True,
+            )
         else:
             await self._post("/openapi/v1/spot/order/cancel", body={"id": order_id}, signed=True)
         return True
@@ -338,7 +437,8 @@ class Exchange1Broker(BrokerAdapter):
     async def get_order_status(self, order_id: str) -> OrderStatus:
         """Query the current status of an order on Exchange1 (spot or futures)."""
         if order_id.startswith("futures:"):
-            return await self._get_futures_order_status(order_id[len("futures:"):])
+            raw_id, _, _ = _decode_futures_order_id(order_id)
+            return await self._get_futures_order_status(raw_id, full_order_id=order_id)
 
         data = await self._get(
             "/openapi/v1/spot/order/detail", params={"id": order_id}, signed=True,
@@ -366,13 +466,16 @@ class Exchange1Broker(BrokerAdapter):
             pending_quantity=pending_quantity,
         )
 
-    async def _get_futures_order_status(self, raw_id: str) -> OrderStatus:
+    async def _get_futures_order_status(
+        self, raw_id: str, full_order_id: str | None = None
+    ) -> OrderStatus:
         """Check futures order status via current-orders list.
 
         Exchange1 has no single-order detail endpoint for futures; we scan
         /openapi/v1/futures/order/current.  If the order is absent it is
         assumed filled (Exchange1 removes filled orders from the list).
         """
+        echo_id = full_order_id or f"futures:{raw_id}"
         for pos_model in ("fix", "cross"):
             try:
                 data = await self._get(
@@ -382,12 +485,12 @@ class Exchange1Broker(BrokerAdapter):
                 )
             except RuntimeError:
                 continue
-            orders = data.get("data", {}).get("list", [])
+            orders = data.get("data", {}).get("rows") or []
             for o in orders:
                 if str(o.get("id")) == raw_id or str(o.get("idStr")) == raw_id:
                     qty = Decimal(str(o.get("quantity", "0")))
                     return OrderStatus(
-                        order_id=f"futures:{raw_id}",
+                        order_id=echo_id,
                         status="open",
                         fill_price=Decimal("0"),
                         fill_quantity=Decimal("0"),
@@ -395,7 +498,7 @@ class Exchange1Broker(BrokerAdapter):
                     )
         # Not in active orders → treat as filled
         return OrderStatus(
-            order_id=f"futures:{raw_id}",
+            order_id=echo_id,
             status="filled",
             fill_price=Decimal("0"),
             fill_quantity=Decimal("0"),
