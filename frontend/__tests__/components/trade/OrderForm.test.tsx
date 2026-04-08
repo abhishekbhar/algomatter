@@ -10,7 +10,7 @@ import { OrderForm } from "@/components/trade/OrderForm";
 describe("OrderForm", () => {
   beforeEach(() => {
     (useApiModule.useBrokers as jest.Mock).mockReturnValue({
-      data: [{ id: "b1", broker_type: "exchange1" }],
+      data: [{ id: "b1", broker_type: "exchange1", label: "Main Ex1", is_active: true, connected_at: "2026-01-01" }],
     });
     (useApiModule.useBrokerBalance as jest.Mock).mockReturnValue({
       data: { available: 10000, total: 10000 },

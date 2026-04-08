@@ -115,7 +115,7 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
       <FormControl mb={3}>
         <FormLabel fontSize="xs" color="gray.500" textTransform="uppercase">Broker</FormLabel>
         <Select size="sm" bg={inputBg} value={selectedBrokerId} onChange={(e) => setSelectedBrokerId(e.target.value)} placeholder="Select broker...">
-          {(brokerConnections ?? []).map((b) => (<option key={String(b.id)} value={String(b.id)}>{b.broker_type} — {String(b.id).slice(0, 8)}</option>))}
+          {(brokerConnections ?? []).map((b) => (<option key={String(b.id)} value={String(b.id)}>{b.label} — {b.broker_type}{b.is_active ? "" : " (Inactive)"}</option>))}
         </Select>
       </FormControl>
 
