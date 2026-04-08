@@ -43,7 +43,7 @@ export function TradeHistory({ onTradeUpdate }: Props) {
       ) : (
         <Box overflowX="auto" maxH="200px" overflowY="auto">
           <Table size="sm" variant="simple">
-            <Thead><Tr><Th>Time</Th><Th>Symbol</Th><Th>Side</Th><Th>Type</Th><Th isNumeric>Price</Th><Th isNumeric>Qty</Th><Th>Status</Th>{tab === "open" && <Th>Action</Th>}</Tr></Thead>
+            <Thead><Tr><Th>Time</Th><Th>Symbol</Th><Th>Side</Th><Th>Type</Th><Th isNumeric>Price</Th><Th isNumeric>Qty</Th><Th>Status</Th><Th>Trade ID</Th><Th>Order ID</Th>{tab === "open" && <Th>Action</Th>}</Tr></Thead>
             <Tbody>
               {trades.map((t) => (
                 <Tr key={t.id} fontSize="xs">
@@ -54,6 +54,8 @@ export function TradeHistory({ onTradeUpdate }: Props) {
                   <Td isNumeric>{t.fill_price ? t.fill_price.toLocaleString() : t.price ? t.price.toLocaleString() : "MKT"}</Td>
                   <Td isNumeric>{t.fill_quantity || t.quantity}</Td>
                   <Td><Badge colorScheme={t.status === "filled" ? "green" : t.status === "open" ? "blue" : t.status === "cancelled" ? "gray" : "red"} size="sm">{t.status}</Badge></Td>
+                  <Td color="gray.500" fontFamily="mono" title={t.id}>{t.id.slice(0, 8)}</Td>
+                  <Td color="gray.500" fontFamily="mono" title={t.broker_order_id ?? ""}>{t.broker_order_id ? t.broker_order_id.split(":").pop() : "—"}</Td>
                   {tab === "open" && (<Td><Button size="xs" colorScheme="red" variant="ghost" onClick={() => handleCancel(t.id)}>Cancel</Button></Td>)}
                 </Tr>
               ))}
