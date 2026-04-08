@@ -91,7 +91,47 @@ async def test_place_manual_trade_unknown_broker(client, mock_session):
 
 
 # ---------------------------------------------------------------------------
-# Test 3: POST /api/v1/trades/manual/{id}/cancel returns 404 for missing trade
+# Test 3: POST /api/v1/trades/manual rejects LIMIT order with no price
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_place_manual_trade_limit_requires_price(client, mock_session):
+    """LIMIT orders without a valid price must be rejected at the API edge.
+
+    Previously the router coerced a missing price to ``Decimal("0")`` and
+    forwarded it to the broker, which stripped the ``price`` field from the
+    request body and let Exchange1 reject the order with ``9257 null``. We
+    should fail loudly with HTTP 400 instead.
+    """
+    # No LIMIT order should reach the broker, but mock a broker connection
+    # so we get past the 404 branch.
+    fake_bc = MagicMock()
+    fake_bc.tenant_id = uuid.UUID(FAKE_USER["user_id"])
+    fake_bc.id = uuid.uuid4()
+    fake_bc.broker_type = "exchange1"
+    fake_bc.credentials = b"encrypted"
+    mock_session.get = AsyncMock(return_value=fake_bc)
+
+    resp = await client.post(
+        "/api/v1/trades/manual",
+        json={
+            "broker_connection_id": str(uuid.uuid4()),
+            "symbol": "BTCUSDT",
+            "exchange": "EXCHANGE1",
+            "product_type": "FUTURES",
+            "action": "BUY",
+            "quantity": 0.001,
+            "order_type": "limit",
+            # price intentionally omitted
+        },
+    )
+    assert resp.status_code == 400
+    assert "price" in resp.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Test 4: POST /api/v1/trades/manual/{id}/cancel returns 404 for missing trade
 # ---------------------------------------------------------------------------
 
 

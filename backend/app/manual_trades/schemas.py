@@ -36,6 +36,7 @@ class ManualTradeResponse(BaseModel):
     fill_quantity: float | None
     status: str
     broker_order_id: str | None
+    error_message: str | None = None
     created_at: str
     updated_at: str
     filled_at: str | None

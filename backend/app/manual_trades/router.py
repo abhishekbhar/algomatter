@@ -65,6 +65,7 @@ def _trade_to_response(trade: ManualTrade) -> ManualTradeResponse:
         fill_quantity=trade.fill_quantity,
         status=trade.status,
         broker_order_id=trade.broker_order_id,
+        error_message=trade.error_message,
         created_at=trade.created_at.isoformat() if trade.created_at else "",
         updated_at=trade.updated_at.isoformat() if trade.updated_at else "",
         filled_at=trade.filled_at.isoformat() if trade.filled_at else None,
@@ -105,6 +106,15 @@ async def place_manual_trade(
         )
 
     order_type_mapped = ORDER_TYPE_MAP.get(body.order_type.lower(), "MARKET")
+
+    # LIMIT orders must carry a price — otherwise the broker strips the field
+    # and the exchange rejects the order with a cryptic error (e.g. Exchange1
+    # returns "9257 null"). Fail loudly at the edge instead.
+    if order_type_mapped == "LIMIT" and (body.price is None or body.price <= 0):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="price is required and must be > 0 for LIMIT orders",
+        )
 
     # Create trade record
     trade = ManualTrade(
@@ -155,6 +165,9 @@ async def place_manual_trade(
                 trade.filled_at = datetime.now(UTC)
             elif broker_result.status == "rejected":
                 trade.status = "rejected"
+                # Persist the broker's rejection reason so the user can see why
+                # the order was rejected — otherwise it's silently dropped.
+                trade.error_message = (broker_result.message or "rejected by broker")[:512]
             else:
                 trade.status = "open"
         finally:
@@ -162,6 +175,7 @@ async def place_manual_trade(
     except Exception as e:
         logger.error(f"Failed to place manual trade: {e}")
         trade.status = "failed"
+        trade.error_message = str(e)[:512]
 
     session.add(trade)
     await session.commit()
@@ -262,13 +276,18 @@ async def cancel_manual_trade(
                 credentials = decrypt_credentials(bc.tenant_id, bc.credentials)
                 broker = await get_broker(bc.broker_type, credentials)
                 try:
-                    # Inject symbol mapping for Binance Testnet ephemeral instances
-                    broker._order_symbols[trade.broker_order_id] = trade.broker_symbol
+                    # Binance Testnet brokers are ephemeral — the in-memory
+                    # order_id → symbol map is empty in a fresh instance, so
+                    # reseed it before cancelling. Other brokers (e.g.
+                    # Exchange1) don't have this attribute and don't need it.
+                    if hasattr(broker, "_order_symbols") and trade.broker_symbol:
+                        broker._order_symbols[trade.broker_order_id] = trade.broker_symbol
                     await broker.cancel_order(trade.broker_order_id)
                 finally:
                     await broker.close()
         except Exception as e:
             logger.error(f"Failed to cancel order at broker: {e}")
+            trade.error_message = f"cancel failed: {e}"[:512]
 
     trade.status = "cancelled"
     await session.commit()
