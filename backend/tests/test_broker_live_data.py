@@ -163,3 +163,67 @@ async def test_activity_empty(client):
     assert data["total"] == 0
     assert data["offset"] == 0
     assert data["limit"] == 50
+
+
+@pytest.mark.asyncio
+async def test_activity_webhook_item(client):
+    """A filled webhook signal linked to this broker appears in activity."""
+    import uuid
+    from app.db.models import Strategy, WebhookSignal
+    from tests.conftest import _test_session_factory
+
+    tokens = await create_authenticated_user(client, email="activity2@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    # Create broker
+    create_resp = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "exchange1",
+            "label": "Activity Webhook Broker",
+            "credentials": {"api_key": "k", "api_secret": "s"},
+        },
+        headers=headers,
+    )
+    broker_id = create_resp.json()["id"]
+
+    # Get the user id from /auth/me
+    me_resp = await client.get("/api/v1/auth/me", headers=headers)
+    user_id = uuid.UUID(me_resp.json()["id"])
+    broker_uuid = uuid.UUID(broker_id)
+
+    # Create a strategy linked to the broker and a filled webhook signal
+    async with _test_session_factory() as session:
+        strategy = Strategy(
+            tenant_id=user_id,
+            name="Test Strategy",
+            broker_connection_id=broker_uuid,
+            mode="live",
+        )
+        session.add(strategy)
+        await session.flush()
+
+        signal = WebhookSignal(
+            tenant_id=user_id,
+            strategy_id=strategy.id,
+            raw_payload={"signal": "buy"},
+            parsed_signal={"symbol": "NIFTY", "action": "BUY", "quantity": 10},
+            execution_result="filled",
+            execution_detail={"broker_order_id": "ORD123"},
+        )
+        session.add(signal)
+        await session.commit()
+
+    resp = await client.get(f"/api/v1/brokers/{broker_id}/activity", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+    item = data["items"][0]
+    assert item["source"] == "webhook"
+    assert item["symbol"] == "NIFTY"
+    assert item["action"] == "BUY"
+    assert item["quantity"] == 10.0
+    assert item["fill_price"] is None
+    assert item["strategy_name"] == "Test Strategy"
+    assert item["order_id"] == "ORD123"

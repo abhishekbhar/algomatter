@@ -641,7 +641,7 @@ async def get_broker_activity(
             status=ws.execution_result or "filled",
             order_id=str(order_id) if order_id else None,
             strategy_name=strat.name,
-            created_at=ws.received_at.isoformat() if ws.received_at else "",
+            created_at=ws.received_at.isoformat() if ws.received_at else "1970-01-01T00:00:00+00:00",
         ))
 
     # Source B: Deployment trades for deployments linked to this broker
@@ -665,11 +665,20 @@ async def get_broker_activity(
             status=dt.status,
             order_id=dt.broker_order_id,
             strategy_name=sc.name,
-            created_at=dt.created_at.isoformat() if dt.created_at else "",
+            created_at=dt.created_at.isoformat() if dt.created_at else "1970-01-01T00:00:00+00:00",
         ))
 
-    # Sort combined list by created_at descending
-    items.sort(key=lambda x: x.created_at, reverse=True)
+    # Sort combined list by created_at descending (UTC-normalised to avoid offset comparison issues)
+    def _utc_dt(s: str) -> datetime:
+        try:
+            parsed = datetime.fromisoformat(s)
+            if parsed.tzinfo is not None:
+                return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+            return parsed
+        except (ValueError, TypeError):
+            return datetime.min
+
+    items.sort(key=lambda x: _utc_dt(x.created_at), reverse=True)
     total = len(items)
     page = items[offset: offset + limit]
 
