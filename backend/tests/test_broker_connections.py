@@ -13,6 +13,7 @@ from app.brokers.schemas import (
 from app.db.models import (
     DeploymentState,
     DeploymentTrade,
+    ManualTrade,
     Strategy,
     StrategyCode,
     StrategyCodeVersion,
@@ -834,8 +835,6 @@ async def test_delete_broker_nulls_strategy_broker_connection(client):
 @pytest.mark.asyncio
 async def test_delete_broker_cascades_manual_trades(client):
     """Deleting a broker should cascade-delete linked manual_trades."""
-    from decimal import Decimal
-
     tokens = await create_authenticated_user(client, email="cascade_mt@test.com")
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
 
@@ -849,7 +848,6 @@ async def test_delete_broker_cascades_manual_trades(client):
     me_resp = await client.get("/api/v1/auth/me", headers=headers)
     tenant_id = uuid_mod.UUID(me_resp.json()["id"])
 
-    from app.db.models import ManualTrade
     async with async_session_factory() as session:
         trade = ManualTrade(
             id=uuid_mod.uuid4(),
