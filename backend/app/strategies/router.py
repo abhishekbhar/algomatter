@@ -1,11 +1,11 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user, get_tenant_session
-from app.db.models import Strategy
+from app.db.models import Strategy, WebhookSignal, StrategyResult, PaperTradingSession
 from app.strategies.schemas import (
     CreateStrategyRequest,
     StrategyResponse,
@@ -165,6 +165,10 @@ async def delete_strategy(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Strategy not found",
         )
+    # Delete related records first to avoid FK constraint violations
+    await session.execute(delete(WebhookSignal).where(WebhookSignal.strategy_id == strategy_id))
+    await session.execute(delete(StrategyResult).where(StrategyResult.strategy_id == strategy_id))
+    await session.execute(delete(PaperTradingSession).where(PaperTradingSession.strategy_id == strategy_id))
     await session.delete(strategy)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
