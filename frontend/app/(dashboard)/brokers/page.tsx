@@ -168,6 +168,7 @@ export default function BrokersPage() {
             credentialsDisclosure.onClose();
           }}
           onUpdated={() => {
+            mutate();
             toast({ title: "Credentials updated", status: "success", duration: 3000 });
           }}
           connectionId={credentialsTarget.id}
