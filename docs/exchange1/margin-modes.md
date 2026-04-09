@@ -34,6 +34,10 @@ Exchange1 has an **account-level margin mode** that gets changed when you send a
 
 Once the account is in isolated mode, **all cross orders are blocked** until the mode is manually switched back.
 
+### Mode Switching is Asymmetric
+
+Sending `positionModel: "cross"` when the account is in isolated mode does **NOT** switch it back — it simply rejects the order with `9050`. The switch is one-directional via the API: only `positionModel: "fix"` triggers a mode change (to isolated).
+
 ### Recovery
 
 There is **no API endpoint** to switch margin modes programmatically (all `/set-margin-mode` paths return 404). Recovery must be done manually:
