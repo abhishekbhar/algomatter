@@ -94,3 +94,14 @@ class BrokerOrderResponse(BaseModel):
     order_type: str
     price: float | None
     created_at: str | None
+
+
+class LivePositionResponse(BaseModel):
+    symbol: str
+    exchange: str
+    action: str           # "BUY" (long) or "SELL" (short)
+    quantity: float
+    entry_price: float
+    product_type: str
+    origin: str           # "webhook", "deployment", "exchange_direct"
+    strategy_name: str | None

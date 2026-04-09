@@ -16,6 +16,7 @@ from app.brokers.schemas import (
     BrokerPositionResponse,
     BrokerStatsResponse,
     CreateBrokerConnectionRequest,
+    LivePositionResponse,
     UpdateBrokerConnectionRequest,
 )
 from app.crypto.encryption import decrypt_credentials, encrypt_credentials
@@ -25,7 +26,10 @@ from app.db.models import (
     DeploymentState,
     DeploymentTrade,
     ExchangeInstrument,
+    Strategy,
+    StrategyCode,
     StrategyDeployment,
+    WebhookSignal,
 )
 from app.deployments.schemas import DeploymentTradeResponse, TradesResponse
 from app.deployments.router import _trade_to_response
@@ -253,6 +257,106 @@ async def get_broker_balance(
         )
     finally:
         await broker.close()
+
+
+@router.get("/{connection_id}/live-positions", response_model=list[LivePositionResponse])
+async def get_live_positions(
+    connection_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    from datetime import datetime, timedelta, timezone
+
+    tenant_id = uuid.UUID(current_user["user_id"])
+    conn = await session.scalar(_get_broker_or_404(connection_id, tenant_id))
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker connection not found")
+
+    credentials = decrypt_credentials(conn.tenant_id, conn.credentials)
+    broker = await get_broker(conn.broker_type, credentials)
+    try:
+        exchange_positions = await broker.get_positions()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Failed to fetch positions from broker")
+    finally:
+        await broker.close()
+
+    if not exchange_positions:
+        return []
+
+    # --- Origin inference ---
+
+    # 1. Deployment positions: (symbol, side) → strategy_name
+    dep_result = await session.execute(
+        select(StrategyDeployment, DeploymentState, StrategyCode)
+        .join(DeploymentState, DeploymentState.deployment_id == StrategyDeployment.id)
+        .join(StrategyCode, StrategyCode.id == StrategyDeployment.strategy_code_id)
+        .where(
+            StrategyDeployment.broker_connection_id == connection_id,
+            StrategyDeployment.tenant_id == tenant_id,
+            StrategyDeployment.status.in_(["running", "paused"]),
+        )
+    )
+    dep_positions: dict[tuple[str, str], str] = {}
+    for sd, ds, sc in dep_result:
+        pos = ds.position
+        if pos and pos.get("quantity", 0) != 0:
+            qty = pos["quantity"]
+            side = "BUY" if qty > 0 else "SELL"
+            dep_positions[(sd.symbol, side)] = sc.name
+
+    # 2. Webhook net positions: symbol → (net_qty, strategy_name)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    wh_result = await session.execute(
+        select(WebhookSignal, Strategy)
+        .join(Strategy, Strategy.id == WebhookSignal.strategy_id)
+        .where(
+            Strategy.broker_connection_id == connection_id,
+            WebhookSignal.tenant_id == tenant_id,
+            WebhookSignal.execution_result == "filled",
+            WebhookSignal.received_at >= cutoff,
+        )
+    )
+    webhook_net: dict[str, tuple[float, str]] = {}
+    for ws, strat in wh_result:
+        sig = ws.parsed_signal or {}
+        symbol = sig.get("symbol")
+        action = sig.get("action", "").upper()
+        qty = float(sig.get("quantity", 0))
+        if not symbol or not action or qty == 0:
+            continue
+        current_net, _ = webhook_net.get(symbol, (0.0, strat.name))
+        delta = qty if action == "BUY" else -qty
+        webhook_net[symbol] = (current_net + delta, strat.name)
+
+    result: list[LivePositionResponse] = []
+    for pos in exchange_positions:
+        action = pos.action.upper()
+        origin = "exchange_direct"
+        strategy_name = None
+
+        key = (pos.symbol, action)
+        if key in dep_positions:
+            origin = "deployment"
+            strategy_name = dep_positions[key]
+        else:
+            net, wh_name = webhook_net.get(pos.symbol, (0.0, None))
+            if (action == "BUY" and net > 0) or (action == "SELL" and net < 0):
+                origin = "webhook"
+                strategy_name = wh_name
+
+        result.append(LivePositionResponse(
+            symbol=pos.symbol,
+            exchange=pos.exchange,
+            action=action,
+            quantity=float(pos.quantity),
+            entry_price=float(pos.entry_price),
+            product_type=pos.product_type,
+            origin=origin,
+            strategy_name=strategy_name,
+        ))
+
+    return result
 
 
 @router.get("/{broker_connection_id}/quote")
