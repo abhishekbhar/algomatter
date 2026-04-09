@@ -31,6 +31,7 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
   const [triggerPrice, setTriggerPrice] = useState("");
   const [leverage, setLeverage] = useState(1);
   const [positionModel, setPositionModel] = useState("cross");
+  const [tradeMode, setTradeMode] = useState<"open" | "close">("open");
   const [loading, setLoading] = useState(false);
 
   const { data: balance } = useBrokerBalance(selectedBrokerId || null, productType);
@@ -85,8 +86,16 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
       if (productType === "FUTURES") {
         body.leverage = leverage;
         body.position_model = positionModel;
-        if (action === "SELL" && caps?.shortFutures) {
-          body.position_side = "short";
+        if (tradeMode === "open") {
+          // Open: BUY=long (no side), SELL=short (needs position_side)
+          if (action === "SELL" && caps?.shortFutures) {
+            body.position_side = "short";
+          }
+        } else {
+          // Close: BUY closes short, SELL closes long (default side)
+          if (action === "BUY" && caps?.shortFutures) {
+            body.position_side = "short";
+          }
         }
       }
       await apiClient("/api/v1/trades/manual", { method: "POST", body });
@@ -104,8 +113,17 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
   const isShortDisabled = productType === "FUTURES" && caps && !caps.shortFutures;
   const showTriggerPrice = orderType === "SL" || orderType === "SL-M";
   const isLimitLike = orderType === "LIMIT" || orderType === "SL";
-  const actionLabel = productType === "FUTURES" ? (action === "BUY" ? "Long" : "Short") : action;
-  const submitLabel = `${actionLabel} ${symbol}${productType === "FUTURES" && leverage > 1 ? ` ${leverage}x` : ""}`;
+
+  const buyLabel = productType !== "FUTURES" ? "Buy"
+    : tradeMode === "open" ? "Long"
+    : "Close Short";
+  const sellLabel = productType !== "FUTURES" ? "Sell"
+    : tradeMode === "open" ? "Short"
+    : "Close Long";
+  const actionLabel = action === "BUY" ? buyLabel : sellLabel;
+  const submitLabel = productType === "FUTURES"
+    ? `${actionLabel} ${symbol}${tradeMode === "open" && leverage > 1 ? ` ${leverage}x` : ""}`
+    : `${actionLabel} ${symbol}`;
   const balancePrefix = caps?.currencySymbol || "";
 
   return (
@@ -130,9 +148,16 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
         </Flex>
       )}
 
+      {productType === "FUTURES" && (
+        <Flex bg={inputBg} borderRadius="md" p="2px" mb={2}>
+          <Button flex={1} size="xs" variant={tradeMode === "open" ? "solid" : "ghost"} colorScheme={tradeMode === "open" ? "blue" : "gray"} onClick={() => setTradeMode("open")}>Open</Button>
+          <Button flex={1} size="xs" variant={tradeMode === "close" ? "solid" : "ghost"} colorScheme={tradeMode === "close" ? "orange" : "gray"} onClick={() => setTradeMode("close")}>Close</Button>
+        </Flex>
+      )}
+
       <Flex gap={2} mb={3}>
-        <Button flex={1} size="sm" colorScheme={action === "BUY" ? "green" : "gray"} variant={action === "BUY" ? "solid" : "outline"} onClick={() => setAction("BUY")}>{productType === "FUTURES" ? "Long" : "Buy"}</Button>
-        <Button flex={1} size="sm" colorScheme={action === "SELL" ? "red" : "gray"} variant={action === "SELL" ? "solid" : "outline"} onClick={() => setAction("SELL")} isDisabled={!!isShortDisabled}>{productType === "FUTURES" ? "Short" : "Sell"}</Button>
+        <Button flex={1} size="sm" colorScheme={action === "BUY" ? "green" : "gray"} variant={action === "BUY" ? "solid" : "outline"} onClick={() => setAction("BUY")}>{buyLabel}</Button>
+        <Button flex={1} size="sm" colorScheme={action === "SELL" ? "red" : "gray"} variant={action === "SELL" ? "solid" : "outline"} onClick={() => setAction("SELL")} isDisabled={productType === "FUTURES" && tradeMode === "open" ? !!isShortDisabled : false}>{sellLabel}</Button>
       </Flex>
 
       {productType === "FUTURES" && (
