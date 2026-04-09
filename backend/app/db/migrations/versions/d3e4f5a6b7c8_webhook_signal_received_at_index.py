@@ -1,6 +1,6 @@
 """webhook_signal_received_at_index
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: d3e4f5a6b7c8
 Revises: f2a3b4c5d6e7
 Create Date: 2026-04-09 14:00:00.000000
 
@@ -10,7 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 
 
-revision: str = "a1b2c3d4e5f6"
+revision: str = "d3e4f5a6b7c8"
 down_revision: Union[str, None] = "f2a3b4c5d6e7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
