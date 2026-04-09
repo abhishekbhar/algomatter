@@ -178,9 +178,10 @@ async def place_manual_trade(
         finally:
             await broker.close()
     except Exception as e:
-        logger.error(f"Failed to place manual trade: {e}")
+        logger.error(f"Failed to place manual trade: {e}", exc_info=True)
         trade.status = "failed"
-        trade.error_message = str(e)[:512]
+        # Store a generic message for the user; full error is in server logs
+        trade.error_message = "Trade execution failed. Check server logs for details."
 
     session.add(trade)
     await session.commit()
