@@ -431,8 +431,13 @@ class Exchange1Broker(BrokerAdapter):
                 message=self._translate_futures_error(str(exc)),
             )
 
-        raw_id = str(data.get("data", ""))
-        order_id = _encode_futures_order_id(raw_id, symbol, position_type) if raw_id else ""
+        raw_id = str(data.get("data", "")).strip()
+        if raw_id:
+            order_id = _encode_futures_order_id(raw_id, symbol, position_type)
+        else:
+            # Exchange1 close endpoint returns empty data — synthesise a
+            # traceable identifier from symbol + epoch so the record isn't blank.
+            order_id = f"futures:close:{symbol}:{int(time.time() * 1000)}"
         if order.order_type == "MARKET":
             return OrderResponse(
                 order_id=order_id, status="filled",
