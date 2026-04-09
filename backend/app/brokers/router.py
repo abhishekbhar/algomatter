@@ -310,7 +310,7 @@ async def get_live_positions(
             dep_positions[(sd.symbol, side)] = sc.name
 
     # 2. Webhook net positions: symbol → (net_qty, strategy_name)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
     wh_result = await session.execute(
         select(WebhookSignal, Strategy)
         .join(Strategy, Strategy.id == WebhookSignal.strategy_id)
