@@ -930,9 +930,8 @@ async def test_patch_broker_connection_updates_credentials(client):
 
     # Verify the new credentials are actually stored and decryptable
     async with async_session_factory() as session:
-        from sqlalchemy import select as sa_select
         result = await session.execute(
-            sa_select(BrokerConnection).where(BrokerConnection.id == uuid_mod.UUID(conn_id))
+            select(BrokerConnection).where(BrokerConnection.id == uuid_mod.UUID(conn_id))
         )
         conn_row = result.scalar_one()
         me_resp = await client.get("/api/v1/auth/me", headers=headers)

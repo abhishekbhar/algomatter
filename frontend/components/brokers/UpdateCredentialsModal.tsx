@@ -58,8 +58,8 @@ export function UpdateCredentialsModal({
         method: "PATCH",
         body: { credentials },
       });
-      onUpdated();
       onClose();
+      onUpdated();
     } catch {
       setError("Failed to update credentials");
     } finally {
