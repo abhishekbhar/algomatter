@@ -100,6 +100,9 @@ class Strategy(Base):
 
 class WebhookSignal(Base):
     __tablename__ = "webhook_signals"
+    __table_args__ = (
+        Index("ix_webhook_signals_tenant_received", "tenant_id", "received_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
