@@ -6,12 +6,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiClient, ApiError } from "@/lib/api/client";
-
-const BROKER_FIELDS: Record<string, string[]> = {
-  zerodha: ["api_key", "api_secret", "user_id"],
-  exchange1: ["api_key", "private_key"],
-  binance_testnet: ["api_key", "api_secret"],
-};
+import { BROKER_FIELDS } from "@/lib/brokerFields";
 
 const MAX_LABEL_LEN = 40;
 
