@@ -32,14 +32,6 @@ const signalColumns: Column<WebhookSignal>[] = [
   }},
 ];
 
-const equityPlaceholder = [
-  { time: "2026-01-01", value: 100000 },
-  { time: "2026-01-15", value: 102500 },
-  { time: "2026-02-01", value: 101800 },
-  { time: "2026-02-15", value: 105200 },
-  { time: "2026-03-01", value: 108000 },
-  { time: "2026-03-15", value: 112500 },
-];
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -94,11 +86,16 @@ export default function DashboardPage() {
         />
       </SimpleGrid>
 
-      {/* Equity Curve */}
+      {/* Equity Curve — go to Analytics > strategy to see per-strategy curves */}
       <Box bg={cardBg} p={4} borderRadius="lg" shadow="sm" mb={6}>
-        <Heading size="sm" mb={2}>Equity Curve</Heading>
+        <Flex justify="space-between" align="center" mb={2}>
+          <Heading size="sm">Equity Curve</Heading>
+          <Button size="xs" variant="link" colorScheme="blue" onClick={() => router.push("/analytics")}>
+            View per-strategy →
+          </Button>
+        </Flex>
         <ChartContainer height={300} isLoading={overviewLoading}>
-          {(tf) => <EquityCurve data={filterByTimeframe(equityPlaceholder, tf)} height={300} />}
+          {(tf) => <EquityCurve data={filterByTimeframe([], tf)} height={300} />}
         </ChartContainer>
       </Box>
 
