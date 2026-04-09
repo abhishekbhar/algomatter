@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 def validate_label(v: str) -> str:
@@ -25,9 +25,21 @@ class CreateBrokerConnectionRequest(BaseModel):
 
 
 class UpdateBrokerConnectionRequest(BaseModel):
-    label: str
+    label: str | None = None
+    credentials: dict | None = None
 
-    _validate_label = field_validator("label")(validate_label)
+    @field_validator("label", mode="before")
+    @classmethod
+    def validate_label_if_provided(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return validate_label(v)
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> "UpdateBrokerConnectionRequest":
+        if self.label is None and self.credentials is None:
+            raise ValueError("at least one of label or credentials must be provided")
+        return self
 
 
 class BrokerConnectionResponse(BaseModel):

@@ -125,7 +125,11 @@ async def update_broker_connection(
             detail="Broker connection not found",
         )
 
-    conn.label = body.label
+    if body.label is not None:
+        conn.label = body.label
+    if body.credentials is not None:
+        conn.credentials = encrypt_credentials(tenant_id, body.credentials)
+
     try:
         await session.commit()
     except IntegrityError:

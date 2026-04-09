@@ -873,3 +873,100 @@ async def test_delete_broker_cascades_manual_trades(client):
             select(ManualTrade).where(ManualTrade.id == trade_id)
         )
         assert result.scalar_one_or_none() is None, "manual trade should be cascade-deleted"
+
+
+# ---------------------------------------------------------------------------
+# Schema unit tests — UpdateBrokerConnectionRequest credentials support
+# ---------------------------------------------------------------------------
+
+def test_update_schema_credentials_only_is_valid():
+    req = UpdateBrokerConnectionRequest(credentials={"api_key": "k", "private_key": "p"})
+    assert req.credentials == {"api_key": "k", "private_key": "p"}
+    assert req.label is None
+
+
+def test_update_schema_both_fields_is_valid():
+    req = UpdateBrokerConnectionRequest(label="MyBroker", credentials={"api_key": "k"})
+    assert req.label == "MyBroker"
+    assert req.credentials == {"api_key": "k"}
+
+
+# Note: test_update_schema_requires_label already in the file covers the case
+# where neither field is provided (raises ValidationError).
+
+
+# ---------------------------------------------------------------------------
+# API tests — PATCH credentials
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_patch_broker_connection_updates_credentials(client):
+    """PATCH with credentials should re-encrypt and store new credentials."""
+    tokens = await create_authenticated_user(client, email="creds_update@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    create = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "exchange1",
+            "label": "Creds Test",
+            "credentials": {"api_key": "old-key", "private_key": "old-private"},
+        },
+        headers=headers,
+    )
+    conn_id = create.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/brokers/{conn_id}",
+        json={"credentials": {"api_key": "new-key", "private_key": "new-private"}},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == conn_id
+    assert body["label"] == "Creds Test"  # label unchanged
+    assert "credentials" not in body       # credentials never returned
+
+
+@pytest.mark.asyncio
+async def test_patch_broker_connection_label_and_credentials_together(client):
+    """PATCH with both label and credentials updates both."""
+    tokens = await create_authenticated_user(client, email="both_update@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    create = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "exchange1",
+            "label": "Original",
+            "credentials": {"api_key": "old", "private_key": "old-p"},
+        },
+        headers=headers,
+    )
+    conn_id = create.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/brokers/{conn_id}",
+        json={"label": "Updated", "credentials": {"api_key": "new", "private_key": "new-p"}},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["label"] == "Updated"
+
+
+@pytest.mark.asyncio
+async def test_patch_broker_connection_empty_body_returns_422(client):
+    """PATCH with no fields should return 422."""
+    tokens = await create_authenticated_user(client, email="empty_patch@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    create = await client.post(
+        "/api/v1/brokers",
+        json={"broker_type": "zerodha", "label": "E", "credentials": {"api_key": "k", "api_secret": "s"}},
+        headers=headers,
+    )
+    conn_id = create.json()["id"]
+
+    resp = await client.patch(
+        f"/api/v1/brokers/{conn_id}",
+        json={},
+        headers=headers,
+    )
+    assert resp.status_code == 422
