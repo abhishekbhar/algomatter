@@ -174,6 +174,22 @@ async def delete_broker_connection(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Broker connection not found",
         )
+
+    # Prevent deletion if live deployments are still running on this broker
+    active_q = await session.execute(
+        select(func.count(StrategyDeployment.id)).where(
+            StrategyDeployment.broker_connection_id == connection_id,
+            StrategyDeployment.tenant_id == tenant_id,
+            StrategyDeployment.status.in_(["running", "paused"]),
+        )
+    )
+    active_count = active_q.scalar() or 0
+    if active_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete broker connection: {active_count} active deployment(s) are using it. Stop them first.",
+        )
+
     await session.delete(conn)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
