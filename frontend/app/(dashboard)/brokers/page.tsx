@@ -3,7 +3,7 @@ import {
   Box, Heading, Flex, Button, IconButton, SimpleGrid, Card, CardHeader, CardBody, CardFooter,
   Text, useDisclosure, useToast,
 } from "@chakra-ui/react";
-import { MdEdit } from "react-icons/md";
+import { MdEdit, MdKey } from "react-icons/md";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { RenameBrokerModal } from "@/components/brokers/RenameBrokerModal";
+import { UpdateCredentialsModal } from "@/components/brokers/UpdateCredentialsModal";
 import { useBrokers } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatDate } from "@/lib/utils/formatters";
@@ -23,6 +24,8 @@ export default function BrokersPage() {
   const renameDisclosure = useDisclosure();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ id: string; label: string } | null>(null);
+  const credentialsDisclosure = useDisclosure();
+  const [credentialsTarget, setCredentialsTarget] = useState<{ id: string; brokerType: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const handleDelete = async () => {
@@ -106,6 +109,17 @@ export default function BrokersPage() {
                     renameDisclosure.onOpen();
                   }}
                 />
+                <IconButton
+                  aria-label="Update credentials"
+                  icon={<MdKey />}
+                  size="xs"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setCredentialsTarget({ id: broker.id, brokerType: broker.broker_type });
+                    credentialsDisclosure.onOpen();
+                  }}
+                />
                 <Button
                   size="xs"
                   colorScheme="red"
@@ -125,7 +139,7 @@ export default function BrokersPage() {
         onClose={() => { setDeleteTarget(null); deleteDisclosure.onClose(); }}
         onConfirm={handleDelete}
         title="Delete Broker"
-        message="Are you sure you want to delete this broker connection? This action cannot be undone."
+        message="This will permanently delete the broker connection and all linked deployments and trade history. This action cannot be undone."
         confirmLabel="Delete"
         isLoading={deleting}
       />
@@ -143,6 +157,21 @@ export default function BrokersPage() {
           }}
           connectionId={renameTarget.id}
           currentLabel={renameTarget.label}
+        />
+      )}
+
+      {credentialsTarget && (
+        <UpdateCredentialsModal
+          isOpen={credentialsDisclosure.isOpen}
+          onClose={() => {
+            setCredentialsTarget(null);
+            credentialsDisclosure.onClose();
+          }}
+          onUpdated={() => {
+            toast({ title: "Credentials updated", status: "success", duration: 3000 });
+          }}
+          connectionId={credentialsTarget.id}
+          brokerType={credentialsTarget.brokerType}
         />
       )}
     </Box>
