@@ -4,8 +4,8 @@ import time
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user, get_session, get_tenant_session
@@ -225,6 +225,8 @@ async def regenerate_webhook_token(
 
 @webhook_config_router.get("/signals")
 async def list_signals(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -236,13 +238,25 @@ async def list_signals(
     )
     strat_map = {s.id: s.name for s in strat_result.scalars().all()}
 
+    total_q = await session.execute(
+        select(func.count()).select_from(WebhookSignal).where(WebhookSignal.tenant_id == tenant_id)
+    )
+    total = total_q.scalar() or 0
+
     result = await session.execute(
         select(WebhookSignal)
         .where(WebhookSignal.tenant_id == tenant_id)
         .order_by(WebhookSignal.received_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
     signals = result.scalars().all()
-    return [_signal_to_dict(s, strat_map) for s in signals]
+    return {
+        "signals": [_signal_to_dict(s, strat_map) for s in signals],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
 
 
 @webhook_config_router.get("/signals/strategy/{strategy_id}")

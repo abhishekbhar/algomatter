@@ -78,10 +78,15 @@ export function useWebhookConfig() {
   return useApiGet<WebhookConfig>("/api/v1/webhooks/config");
 }
 
-export function useWebhookSignals() {
-  return useApiGet<WebhookSignal[]>("/api/v1/webhooks/signals", {
-    refreshInterval: POLLING_INTERVALS.SIGNALS,
-  });
+export function useWebhookSignals(limit = 100) {
+  const result = useApiGet<{ signals: WebhookSignal[]; total: number; offset: number; limit: number }>(
+    `/api/v1/webhooks/signals?limit=${limit}`,
+    { refreshInterval: POLLING_INTERVALS.SIGNALS },
+  );
+  return {
+    ...result,
+    data: result.data?.signals,
+  };
 }
 
 export function useStrategySignals(strategyId: string | null) {
