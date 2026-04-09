@@ -34,6 +34,8 @@ import type {
   BrokerPosition,
   BrokerOrder,
   BrokerBalance,
+  LivePosition,
+  ActivityResponse,
 } from "@/lib/api/types";
 
 function fetcher<T>(path: string): Promise<T> {
@@ -310,5 +312,18 @@ export function useBrokerQuote(brokerConnectionId: string | null, symbol: string
       ? `/api/v1/brokers/${brokerConnectionId}/quote?symbol=${encodeURIComponent(symbol)}`
       : null,
     { refreshInterval: 5000 },
+  );
+}
+
+export function useLivePositions(id: string | undefined) {
+  return useApiGet<LivePosition[]>(
+    id ? `/api/v1/brokers/${id}/live-positions` : null,
+    { refreshInterval: 10000 },
+  );
+}
+
+export function useActivity(id: string | undefined, offset = 0, limit = 50) {
+  return useApiGet<ActivityResponse>(
+    id ? `/api/v1/brokers/${id}/activity?offset=${offset}&limit=${limit}` : null,
   );
 }

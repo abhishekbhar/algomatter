@@ -394,3 +394,34 @@ export interface BrokerBalance {
   total: number;
   used_margin: number;
 }
+
+export interface LivePosition {
+  symbol: string;
+  exchange: string;
+  action: string;       // "BUY" or "SELL"
+  quantity: number;
+  entry_price: number;
+  product_type: string;
+  origin: "webhook" | "deployment" | "exchange_direct";
+  strategy_name: string | null;
+}
+
+export interface ActivityItem {
+  id: string;
+  source: "webhook" | "deployment";
+  symbol: string;
+  action: string;
+  quantity: number;
+  fill_price: number | null;
+  status: string;
+  order_id: string | null;
+  strategy_name: string | null;
+  created_at: string;
+}
+
+export interface ActivityResponse {
+  items: ActivityItem[];
+  total: number;
+  offset: number;
+  limit: number;
+}
