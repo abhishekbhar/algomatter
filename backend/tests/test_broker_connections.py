@@ -93,7 +93,8 @@ async def test_rls_isolation_broker_connections(client):
 
 
 import uuid as uuid_mod
-from app.db.models import StrategyCode, StrategyCodeVersion, StrategyDeployment, DeploymentState, DeploymentTrade
+from app.db.models import Strategy, StrategyCode, StrategyCodeVersion, StrategyDeployment, DeploymentState, DeploymentTrade
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import async_session_factory
 from datetime import datetime, UTC
@@ -741,3 +742,85 @@ def test_update_schema_rejects_too_long_label():
 def test_update_schema_trims_whitespace():
     req = UpdateBrokerConnectionRequest(label="  My Account  ")
     assert req.label == "My Account"
+
+
+@pytest.mark.asyncio
+async def test_delete_broker_cascades_deployments(client):
+    """Deleting a broker should cascade-delete linked strategy_deployments."""
+    tokens = await create_authenticated_user(client, email="cascade_dep@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    broker_resp = await client.post(
+        "/api/v1/brokers",
+        json={"broker_type": "exchange1", "label": "Cascade Dep", "credentials": {"api_key": "k", "private_key": "p"}},
+        headers=headers,
+    )
+    broker_id = broker_resp.json()["id"]
+
+    async with async_session_factory() as session:
+        me_resp = await client.get("/api/v1/auth/me", headers=headers)
+        tenant_id = uuid_mod.UUID(me_resp.json()["id"])
+
+        code = StrategyCode(id=uuid_mod.uuid4(), tenant_id=tenant_id, name="CascadeStrat", code="pass")
+        session.add(code)
+        await session.flush()
+        version = StrategyCodeVersion(
+            id=uuid_mod.uuid4(), tenant_id=tenant_id, strategy_code_id=code.id, version=1, code="pass"
+        )
+        session.add(version)
+        await session.flush()
+        dep = StrategyDeployment(
+            id=uuid_mod.uuid4(), tenant_id=tenant_id,
+            strategy_code_id=code.id, strategy_code_version_id=version.id,
+            mode="live", status="running", symbol="BTCUSDT",
+            exchange="EXCHANGE1", product_type="FUTURES", interval="1h",
+            broker_connection_id=uuid_mod.UUID(broker_id),
+        )
+        session.add(dep)
+        dep_id = dep.id
+        await session.commit()
+
+    resp = await client.delete(f"/api/v1/brokers/{broker_id}", headers=headers)
+    assert resp.status_code == 204
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(StrategyDeployment).where(StrategyDeployment.id == dep_id)
+        )
+        assert result.scalar_one_or_none() is None, "deployment should be cascade-deleted"
+
+
+@pytest.mark.asyncio
+async def test_delete_broker_nulls_strategy_broker_connection(client):
+    """Deleting a broker should SET NULL on Strategy.broker_connection_id."""
+    tokens = await create_authenticated_user(client, email="setnull@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    broker_resp = await client.post(
+        "/api/v1/brokers",
+        json={"broker_type": "exchange1", "label": "SetNull", "credentials": {"api_key": "k", "private_key": "p"}},
+        headers=headers,
+    )
+    broker_id = broker_resp.json()["id"]
+
+    async with async_session_factory() as session:
+        me_resp = await client.get("/api/v1/auth/me", headers=headers)
+        tenant_id = uuid_mod.UUID(me_resp.json()["id"])
+
+        strat = Strategy(
+            id=uuid_mod.uuid4(), tenant_id=tenant_id,
+            name="NullTest", mode="live",
+            broker_connection_id=uuid_mod.UUID(broker_id),
+        )
+        session.add(strat)
+        strat_id = strat.id
+        await session.commit()
+
+    resp = await client.delete(f"/api/v1/brokers/{broker_id}", headers=headers)
+    assert resp.status_code == 204
+
+    async with async_session_factory() as session:
+        result = await session.execute(select(Strategy).where(Strategy.id == strat_id))
+        strat = result.scalar_one_or_none()
+        assert strat is not None, "strategy should still exist"
+        assert strat.broker_connection_id is None, "broker_connection_id should be NULL"

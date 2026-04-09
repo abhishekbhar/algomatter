@@ -87,7 +87,7 @@ class Strategy(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     broker_connection_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("broker_connections.id"), nullable=True
+        ForeignKey("broker_connections.id", ondelete="SET NULL"), nullable=True
     )
     mode: Mapped[str] = mapped_column(String(50), default="paper")
     mapping_template: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -320,7 +320,7 @@ class StrategyDeployment(Base):
     product_type: Mapped[str] = mapped_column(String(20), default="DELIVERY")
     interval: Mapped[str] = mapped_column(String(10), nullable=False)
     broker_connection_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("broker_connections.id"), nullable=True
+        ForeignKey("broker_connections.id", ondelete="CASCADE"), nullable=True
     )
     cron_expression: Mapped[str | None] = mapped_column(String(50), nullable=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -442,7 +442,9 @@ class ManualTrade(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    broker_connection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("broker_connections.id"), nullable=False)
+    broker_connection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("broker_connections.id", ondelete="CASCADE"), nullable=False
+    )
     symbol: Mapped[str] = mapped_column(String(32), nullable=False)
     exchange: Mapped[str] = mapped_column(String(32), nullable=False)
     product_type: Mapped[str] = mapped_column(String(16), nullable=False)
