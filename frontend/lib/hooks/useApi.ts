@@ -33,6 +33,7 @@ import type {
   BrokerStats,
   BrokerPosition,
   BrokerOrder,
+  BrokerBalance,
 } from "@/lib/api/types";
 
 function fetcher<T>(path: string): Promise<T> {
@@ -297,7 +298,7 @@ export function useBrokerTrades(id: string | undefined, offset = 0, limit = 50) 
 
 export function useBrokerBalance(brokerConnectionId: string | null, productType?: string) {
   const params = productType ? `?product_type=${productType}` : "";
-  return useApiGet<{ available: number; total: number }>(
+  return useApiGet<BrokerBalance>(
     brokerConnectionId ? `/api/v1/brokers/${brokerConnectionId}/balance${params}` : null,
     { refreshInterval: 10000 },
   );

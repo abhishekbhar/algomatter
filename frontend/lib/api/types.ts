@@ -392,4 +392,5 @@ export interface ManualTradesListResponse {
 export interface BrokerBalance {
   available: number;
   total: number;
+  used_margin: number;
 }

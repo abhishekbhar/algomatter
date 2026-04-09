@@ -81,6 +81,7 @@ class BrokerPositionResponse(BaseModel):
 class BrokerBalanceResponse(BaseModel):
     available: float
     total: float
+    used_margin: float
 
 
 class BrokerOrderResponse(BaseModel):

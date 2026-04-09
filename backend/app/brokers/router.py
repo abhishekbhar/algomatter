@@ -249,6 +249,7 @@ async def get_broker_balance(
         return BrokerBalanceResponse(
             available=float(balance.available),
             total=float(balance.total),
+            used_margin=float(balance.used_margin),
         )
     finally:
         await broker.close()
