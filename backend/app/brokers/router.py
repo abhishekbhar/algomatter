@@ -253,13 +253,15 @@ async def get_broker_balance(
     broker = await get_broker(conn.broker_type, credentials)
     try:
         balance = await broker.get_balance(product_type=product_type)
-        return BrokerBalanceResponse(
-            available=float(balance.available),
-            total=float(balance.total),
-            used_margin=float(balance.used_margin),
-        )
+    except Exception:
+        raise HTTPException(status_code=502, detail="Failed to fetch balance from broker")
     finally:
         await broker.close()
+    return BrokerBalanceResponse(
+        available=float(balance.available),
+        total=float(balance.total),
+        used_margin=float(balance.used_margin),
+    )
 
 
 @router.get("/{connection_id}/live-positions", response_model=list[LivePositionResponse])
@@ -618,6 +620,7 @@ async def get_broker_activity(
     items: list[ActivityItemResponse] = []
 
     # Source A: Webhook signals (filled, for strategies linked to this broker)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
     wh_result = await session.execute(
         select(WebhookSignal, Strategy)
         .join(Strategy, Strategy.id == WebhookSignal.strategy_id)
@@ -625,6 +628,7 @@ async def get_broker_activity(
             Strategy.broker_connection_id == connection_id,
             WebhookSignal.tenant_id == tenant_id,
             WebhookSignal.execution_result == "filled",
+            WebhookSignal.received_at >= cutoff,
         )
     )
     for ws, strat in wh_result:

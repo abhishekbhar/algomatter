@@ -302,7 +302,7 @@ export function useBrokerBalance(brokerConnectionId: string | null, productType?
   const params = productType ? `?product_type=${productType}` : "";
   return useApiGet<BrokerBalance>(
     brokerConnectionId ? `/api/v1/brokers/${brokerConnectionId}/balance${params}` : null,
-    { refreshInterval: 10000 },
+    { refreshInterval: 15000 },
   );
 }
 
