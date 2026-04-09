@@ -4,7 +4,7 @@ import {
 } from "@chakra-ui/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useBrokers, useBrokerPositions, useBrokerOrders } from "@/lib/hooks/useApi";
+import { useBrokers, useLivePositions, useBrokerOrders } from "@/lib/hooks/useApi";
 import { BrokerStatsBar } from "@/components/brokers/BrokerStatsBar";
 import { BrokerPositionsTable } from "@/components/brokers/BrokerPositionsTable";
 import { BrokerOrdersTable } from "@/components/brokers/BrokerOrdersTable";
@@ -13,7 +13,7 @@ import { BrokerTradesTable } from "@/components/brokers/BrokerTradesTable";
 export default function BrokerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: brokers } = useBrokers();
-  const { data: positions } = useBrokerPositions(id);
+  const { data: positions } = useLivePositions(id);
   const { data: orders } = useBrokerOrders(id);
 
   const broker = brokers?.find((b) => b.id === id);
@@ -58,7 +58,7 @@ export default function BrokerDetailPage() {
               <Badge ml={2} colorScheme="blue" variant="subtle">{orderCount}</Badge>
             )}
           </Tab>
-          <Tab>Order History</Tab>
+          <Tab>Activity</Tab>
         </TabList>
         <TabPanels>
           <TabPanel px={0}>

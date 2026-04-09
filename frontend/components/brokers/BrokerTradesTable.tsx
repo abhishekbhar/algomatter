@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
 import {
-  Box, Table, Thead, Tbody, Tr, Th, Td, Badge, Text, HStack, Button, Flex,
+  Box, Table, Thead, Tbody, Tr, Th, Td, Badge, Text, HStack, Button, Flex, Tooltip,
 } from "@chakra-ui/react";
-import { useBrokerTrades } from "@/lib/hooks/useApi";
+import { useActivity } from "@/lib/hooks/useApi";
 import { formatDate } from "@/lib/utils/formatters";
 
 interface Props {
@@ -12,22 +12,16 @@ interface Props {
 
 const PAGE_SIZE = 50;
 
-function formatPnl(pnl: number | null): string {
-  if (pnl === null) return "—";
-  const sign = pnl >= 0 ? "+" : "-";
-  return `${sign}₹${Math.abs(pnl).toFixed(2)}`;
-}
-
 export function BrokerTradesTable({ brokerId }: Props) {
   const [offset, setOffset] = useState(0);
-  const { data, isLoading } = useBrokerTrades(brokerId, offset, PAGE_SIZE);
+  const { data, isLoading } = useActivity(brokerId, offset, PAGE_SIZE);
 
   if (isLoading) return <Box py={4}><Text color="gray.500">Loading...</Text></Box>;
-  if (!data || data.trades.length === 0) {
-    return <Box py={8} textAlign="center"><Text color="gray.500">No trades recorded</Text></Box>;
+  if (!data || data.items.length === 0) {
+    return <Box py={8} textAlign="center"><Text color="gray.500">No activity recorded</Text></Box>;
   }
 
-  const { trades, total } = data;
+  const { items, total } = data;
   const canPrev = offset > 0;
   const canNext = offset + PAGE_SIZE < total;
 
@@ -42,26 +36,40 @@ export function BrokerTradesTable({ brokerId }: Props) {
               <Th>Action</Th>
               <Th isNumeric>Qty</Th>
               <Th isNumeric>Fill Price</Th>
-              <Th isNumeric>P&L</Th>
+              <Th>Source</Th>
               <Th>Strategy</Th>
               <Th>Status</Th>
             </Tr>
           </Thead>
           <Tbody>
-            {trades.map((t) => (
-              <Tr key={t.id}>
-                <Td fontSize="xs" color="gray.500">{formatDate(t.created_at)}</Td>
-                <Td fontWeight="semibold">{t.symbol}</Td>
+            {items.map((item) => (
+              <Tr key={item.id}>
+                <Td fontSize="xs" color="gray.500">{formatDate(item.created_at)}</Td>
+                <Td fontWeight="semibold">{item.symbol}</Td>
                 <Td>
-                  <Badge colorScheme={t.action === "BUY" ? "green" : "red"}>{t.action}</Badge>
+                  <Badge colorScheme={item.action === "BUY" ? "green" : "red"}>{item.action}</Badge>
                 </Td>
-                <Td isNumeric>{t.quantity}</Td>
-                <Td isNumeric>{t.fill_price != null ? `₹${t.fill_price.toLocaleString()}` : "—"}</Td>
-                <Td isNumeric color={t.realized_pnl == null ? undefined : t.realized_pnl >= 0 ? "green.400" : "red.400"}>
-                  {formatPnl(t.realized_pnl)}
+                <Td isNumeric>{item.quantity}</Td>
+                <Td isNumeric>
+                  {item.fill_price != null ? (
+                    `₹${item.fill_price.toLocaleString()}`
+                  ) : (
+                    <Tooltip label="Exchange1 does not return fill prices for futures orders.">
+                      <Text as="span" color="gray.400">—</Text>
+                    </Tooltip>
+                  )}
                 </Td>
-                <Td color="gray.500" fontSize="sm">{t.strategy_name}</Td>
-                <Td><Badge variant="subtle">{t.status}</Badge></Td>
+                <Td>
+                  <Badge
+                    colorScheme={item.source === "webhook" ? "blue" : "purple"}
+                    variant="subtle"
+                    fontSize="xs"
+                  >
+                    {item.source === "webhook" ? "Webhook" : "Deployment"}
+                  </Badge>
+                </Td>
+                <Td color="gray.500" fontSize="sm">{item.strategy_name ?? "—"}</Td>
+                <Td><Badge variant="subtle">{item.status}</Badge></Td>
               </Tr>
             ))}
           </Tbody>
@@ -83,6 +91,10 @@ export function BrokerTradesTable({ brokerId }: Props) {
           </HStack>
         </Flex>
       )}
+
+      <Text fontSize="xs" color="gray.500" mt={3} px={1}>
+        Exchange-direct trades (placed directly on Exchange1) are not visible here.
+      </Text>
     </Box>
   );
 }
