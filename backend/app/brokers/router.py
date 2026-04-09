@@ -18,9 +18,8 @@ from app.brokers.schemas import (
     CreateBrokerConnectionRequest,
     UpdateBrokerConnectionRequest,
 )
-from app.crypto.encryption import decrypt_credentials
+from app.crypto.encryption import decrypt_credentials, encrypt_credentials
 from app.brokers.factory import get_broker
-from app.crypto.encryption import encrypt_credentials
 from app.db.models import (
     BrokerConnection,
     DeploymentState,

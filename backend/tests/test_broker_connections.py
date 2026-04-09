@@ -10,7 +10,9 @@ from app.brokers.schemas import (
     CreateBrokerConnectionRequest,
     UpdateBrokerConnectionRequest,
 )
+from app.crypto.encryption import decrypt_credentials
 from app.db.models import (
+    BrokerConnection,
     DeploymentState,
     DeploymentTrade,
     ManualTrade,
@@ -926,6 +928,19 @@ async def test_patch_broker_connection_updates_credentials(client):
     assert body["label"] == "Creds Test"  # label unchanged
     assert "credentials" not in body       # credentials never returned
 
+    # Verify the new credentials are actually stored and decryptable
+    async with async_session_factory() as session:
+        from sqlalchemy import select as sa_select
+        result = await session.execute(
+            sa_select(BrokerConnection).where(BrokerConnection.id == uuid_mod.UUID(conn_id))
+        )
+        conn_row = result.scalar_one()
+        me_resp = await client.get("/api/v1/auth/me", headers=headers)
+        tenant_id = uuid_mod.UUID(me_resp.json()["id"])
+        decrypted = decrypt_credentials(tenant_id, conn_row.credentials)
+        assert decrypted["api_key"] == "new-key"
+        assert decrypted["private_key"] == "new-private"
+
 
 @pytest.mark.asyncio
 async def test_patch_broker_connection_label_and_credentials_together(client):
@@ -970,3 +985,8 @@ async def test_patch_broker_connection_empty_body_returns_422(client):
         headers=headers,
     )
     assert resp.status_code == 422
+
+
+def test_update_schema_empty_credentials_raises():
+    with pytest.raises(ValidationError):
+        UpdateBrokerConnectionRequest(credentials={})

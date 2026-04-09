@@ -21,7 +21,10 @@ class CreateBrokerConnectionRequest(BaseModel):
     label: str
     credentials: dict
 
-    _validate_label = field_validator("label")(validate_label)
+    @field_validator("label")
+    @classmethod
+    def validate_label_field(cls, v: str) -> str:
+        return validate_label(v)
 
 
 class UpdateBrokerConnectionRequest(BaseModel):
@@ -34,6 +37,13 @@ class UpdateBrokerConnectionRequest(BaseModel):
         if v is None:
             return None
         return validate_label(v)
+
+    @field_validator("credentials", mode="before")
+    @classmethod
+    def credentials_not_empty(cls, v: dict | None) -> dict | None:
+        if v is not None and len(v) == 0:
+            raise ValueError("credentials cannot be empty")
+        return v
 
     @model_validator(mode="after")
     def at_least_one_field(self) -> "UpdateBrokerConnectionRequest":
