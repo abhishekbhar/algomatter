@@ -1,9 +1,24 @@
+import uuid as uuid_mod
+from datetime import datetime, UTC
+
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.brokers.schemas import (
     CreateBrokerConnectionRequest,
     UpdateBrokerConnectionRequest,
 )
+from app.db.models import (
+    DeploymentState,
+    DeploymentTrade,
+    Strategy,
+    StrategyCode,
+    StrategyCodeVersion,
+    StrategyDeployment,
+)
+from app.db.session import async_session_factory
 from tests.conftest import create_authenticated_user
 
 
@@ -90,14 +105,6 @@ async def test_rls_isolation_broker_connections(client):
     resp = await client.get("/api/v1/brokers", headers=headers_b)
     assert resp.status_code == 200
     assert len(resp.json()) == 0
-
-
-import uuid as uuid_mod
-from app.db.models import Strategy, StrategyCode, StrategyCodeVersion, StrategyDeployment, DeploymentState, DeploymentTrade
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.session import async_session_factory
-from datetime import datetime, UTC
 
 
 @pytest.mark.asyncio
@@ -757,10 +764,9 @@ async def test_delete_broker_cascades_deployments(client):
     )
     broker_id = broker_resp.json()["id"]
 
+    me_resp = await client.get("/api/v1/auth/me", headers=headers)
+    tenant_id = uuid_mod.UUID(me_resp.json()["id"])
     async with async_session_factory() as session:
-        me_resp = await client.get("/api/v1/auth/me", headers=headers)
-        tenant_id = uuid_mod.UUID(me_resp.json()["id"])
-
         code = StrategyCode(id=uuid_mod.uuid4(), tenant_id=tenant_id, name="CascadeStrat", code="pass")
         session.add(code)
         await session.flush()
@@ -803,10 +809,9 @@ async def test_delete_broker_nulls_strategy_broker_connection(client):
     )
     broker_id = broker_resp.json()["id"]
 
+    me_resp = await client.get("/api/v1/auth/me", headers=headers)
+    tenant_id = uuid_mod.UUID(me_resp.json()["id"])
     async with async_session_factory() as session:
-        me_resp = await client.get("/api/v1/auth/me", headers=headers)
-        tenant_id = uuid_mod.UUID(me_resp.json()["id"])
-
         strat = Strategy(
             id=uuid_mod.uuid4(), tenant_id=tenant_id,
             name="NullTest", mode="live",
@@ -824,3 +829,49 @@ async def test_delete_broker_nulls_strategy_broker_connection(client):
         strat = result.scalar_one_or_none()
         assert strat is not None, "strategy should still exist"
         assert strat.broker_connection_id is None, "broker_connection_id should be NULL"
+
+
+@pytest.mark.asyncio
+async def test_delete_broker_cascades_manual_trades(client):
+    """Deleting a broker should cascade-delete linked manual_trades."""
+    from decimal import Decimal
+
+    tokens = await create_authenticated_user(client, email="cascade_mt@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    broker_resp = await client.post(
+        "/api/v1/brokers",
+        json={"broker_type": "exchange1", "label": "Cascade MT", "credentials": {"api_key": "k", "private_key": "p"}},
+        headers=headers,
+    )
+    broker_id = broker_resp.json()["id"]
+
+    me_resp = await client.get("/api/v1/auth/me", headers=headers)
+    tenant_id = uuid_mod.UUID(me_resp.json()["id"])
+
+    from app.db.models import ManualTrade
+    async with async_session_factory() as session:
+        trade = ManualTrade(
+            id=uuid_mod.uuid4(),
+            tenant_id=tenant_id,
+            broker_connection_id=uuid_mod.UUID(broker_id),
+            symbol="BTCUSDT",
+            exchange="EXCHANGE1",
+            product_type="FUTURES",
+            action="BUY",
+            quantity=1,
+            order_type="MARKET",
+            status="filled",
+        )
+        session.add(trade)
+        trade_id = trade.id
+        await session.commit()
+
+    resp = await client.delete(f"/api/v1/brokers/{broker_id}", headers=headers)
+    assert resp.status_code == 204
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(ManualTrade).where(ManualTrade.id == trade_id)
+        )
+        assert result.scalar_one_or_none() is None, "manual trade should be cascade-deleted"
