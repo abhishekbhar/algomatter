@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -265,8 +266,6 @@ async def get_live_positions(
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
-    from datetime import datetime, timedelta, timezone
-
     tenant_id = uuid.UUID(current_user["user_id"])
     conn = await session.scalar(_get_broker_or_404(connection_id, tenant_id))
     if not conn:
@@ -294,6 +293,7 @@ async def get_live_positions(
         .where(
             StrategyDeployment.broker_connection_id == connection_id,
             StrategyDeployment.tenant_id == tenant_id,
+            StrategyDeployment.mode == "live",
             StrategyDeployment.status.in_(["running", "paused"]),
         )
     )
@@ -325,9 +325,11 @@ async def get_live_positions(
         qty = float(sig.get("quantity", 0))
         if not symbol or not action or qty == 0:
             continue
-        current_net, _ = webhook_net.get(symbol, (0.0, strat.name))
+        current_net, current_name = webhook_net.get(symbol, (0.0, strat.name))
         delta = qty if action == "BUY" else -qty
-        webhook_net[symbol] = (current_net + delta, strat.name)
+        new_net = current_net + delta
+        # keep the name from the strategy that has the largest net contribution
+        webhook_net[symbol] = (new_net, current_name if current_name else strat.name)
 
     result: list[LivePositionResponse] = []
     for pos in exchange_positions:

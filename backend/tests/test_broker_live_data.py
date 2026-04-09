@@ -109,3 +109,31 @@ async def test_live_positions_exchange_direct(client):
     assert data[0]["symbol"] == "BANKNIFTY"
     assert data[0]["origin"] == "exchange_direct"
     assert data[0]["strategy_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_live_positions_502_on_broker_error(client):
+    """When broker raises an exception on get_positions, endpoint returns 502."""
+    tokens = await create_authenticated_user(client, email="livepos3@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    create_resp = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "exchange1",
+            "label": "Error Broker",
+            "credentials": {"api_key": "k", "api_secret": "s"},
+        },
+        headers=headers,
+    )
+    broker_id = create_resp.json()["id"]
+
+    mock_broker = AsyncMock()
+    mock_broker.get_positions = AsyncMock(side_effect=Exception("auth failed"))
+    mock_broker.close = AsyncMock()
+
+    with patch("app.brokers.router.get_broker", new=AsyncMock(return_value=mock_broker)):
+        resp = await client.get(f"/api/v1/brokers/{broker_id}/live-positions", headers=headers)
+
+    assert resp.status_code == 502
+    assert "Failed to fetch positions from broker" in resp.json()["detail"]
