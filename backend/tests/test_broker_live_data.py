@@ -29,7 +29,7 @@ async def test_balance_includes_used_margin(client):
     mock_broker.get_balance = AsyncMock(return_value=mock_balance)
     mock_broker.close = AsyncMock()
 
-    with patch("app.brokers.router.get_broker", return_value=mock_broker):
+    with patch("app.brokers.router.get_broker", new=AsyncMock(return_value=mock_broker)):
         resp = await client.get(f"/api/v1/brokers/{broker_id}/balance", headers=headers)
 
     assert resp.status_code == 200
