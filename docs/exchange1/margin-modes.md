@@ -58,6 +58,10 @@ There is **no API endpoint** to switch margin modes programmatically (all `/set-
 
 ## Test Results (2026-04-09)
 
+> **Note:** Tests were run against the **Exchange1 India** broker connection.
+> The Exchange1 Global connection had expired credentials at time of testing and returned
+> "Failed to authenticate" — retesting on Global is pending credential refresh.
+
 All tests used BTCUSDT FUTURES, 1 contract (0.001 BTC), MARKET order type.
 
 | # | position_model | position_side | Status | Error |
