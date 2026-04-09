@@ -10,7 +10,7 @@ export interface BrokerCaps {
 }
 
 export const BROKER_CAPABILITIES: Record<string, BrokerCaps> = {
-  exchange1: { spot: true, futures: true, orderTypes: ["MARKET", "LIMIT", "SL", "SL-M"], shortFutures: true, currency: "INR", currencySymbol: "₹", futuresContractSize: 0.001 },
+  exchange1: { spot: true, futures: true, orderTypes: ["MARKET", "LIMIT"], shortFutures: true, currency: "INR", currencySymbol: "₹", futuresContractSize: 0.001 },
   binance_testnet: { spot: true, futures: false, orderTypes: ["MARKET", "LIMIT", "SL", "SL-M"], shortFutures: false, currency: "USDT", currencySymbol: "", futuresContractSize: 1 },
 };
 
