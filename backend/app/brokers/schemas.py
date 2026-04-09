@@ -105,3 +105,23 @@ class LivePositionResponse(BaseModel):
     product_type: str
     origin: str           # "webhook", "deployment", "exchange_direct"
     strategy_name: str | None
+
+
+class ActivityItemResponse(BaseModel):
+    id: str
+    source: str           # "webhook" or "deployment"
+    symbol: str
+    action: str           # "BUY" or "SELL"
+    quantity: float
+    fill_price: float | None
+    status: str
+    order_id: str | None
+    strategy_name: str | None
+    created_at: str       # ISO 8601
+
+
+class ActivityResponse(BaseModel):
+    items: list[ActivityItemResponse]
+    total: int
+    offset: int
+    limit: int

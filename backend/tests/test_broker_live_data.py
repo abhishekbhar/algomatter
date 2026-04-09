@@ -137,3 +137,29 @@ async def test_live_positions_502_on_broker_error(client):
 
     assert resp.status_code == 502
     assert "Failed to fetch positions from broker" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_activity_empty(client):
+    """No signals or trades → empty activity response."""
+    tokens = await create_authenticated_user(client, email="activity1@test.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    create_resp = await client.post(
+        "/api/v1/brokers",
+        json={
+            "broker_type": "exchange1",
+            "label": "Activity Broker",
+            "credentials": {"api_key": "k", "api_secret": "s"},
+        },
+        headers=headers,
+    )
+    broker_id = create_resp.json()["id"]
+
+    resp = await client.get(f"/api/v1/brokers/{broker_id}/activity", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["items"] == []
+    assert data["total"] == 0
+    assert data["offset"] == 0
+    assert data["limit"] == 50

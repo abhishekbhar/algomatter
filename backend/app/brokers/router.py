@@ -11,6 +11,8 @@ from sqlalchemy.orm import selectinload
 
 from app.auth.deps import get_current_user, get_session, get_tenant_session
 from app.brokers.schemas import (
+    ActivityItemResponse,
+    ActivityResponse,
     BrokerBalanceResponse,
     BrokerConnectionResponse,
     BrokerOrderResponse,
@@ -598,3 +600,77 @@ async def get_broker_trades(
         offset=offset,
         limit=limit,
     )
+
+
+@router.get("/{connection_id}/activity", response_model=ActivityResponse)
+async def get_broker_activity(
+    connection_id: uuid.UUID,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_tenant_session),
+):
+    tenant_id = uuid.UUID(current_user["user_id"])
+    conn = await session.scalar(_get_broker_or_404(connection_id, tenant_id))
+    if not conn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker connection not found")
+
+    items: list[ActivityItemResponse] = []
+
+    # Source A: Webhook signals (filled, for strategies linked to this broker)
+    wh_result = await session.execute(
+        select(WebhookSignal, Strategy)
+        .join(Strategy, Strategy.id == WebhookSignal.strategy_id)
+        .where(
+            Strategy.broker_connection_id == connection_id,
+            WebhookSignal.tenant_id == tenant_id,
+            WebhookSignal.execution_result == "filled",
+        )
+    )
+    for ws, strat in wh_result:
+        sig = ws.parsed_signal or {}
+        detail = ws.execution_detail or {}
+        order_id = detail.get("broker_order_id") or detail.get("order_id")
+        items.append(ActivityItemResponse(
+            id=str(ws.id),
+            source="webhook",
+            symbol=sig.get("symbol", ""),
+            action=(sig.get("action") or "").upper(),
+            quantity=float(sig.get("quantity", 0)),
+            fill_price=None,  # Exchange1 doesn't return fill prices
+            status=ws.execution_result or "filled",
+            order_id=str(order_id) if order_id else None,
+            strategy_name=strat.name,
+            created_at=ws.received_at.isoformat() if ws.received_at else "",
+        ))
+
+    # Source B: Deployment trades for deployments linked to this broker
+    dt_result = await session.execute(
+        select(DeploymentTrade, StrategyDeployment, StrategyCode)
+        .join(StrategyDeployment, StrategyDeployment.id == DeploymentTrade.deployment_id)
+        .join(StrategyCode, StrategyCode.id == StrategyDeployment.strategy_code_id)
+        .where(
+            StrategyDeployment.broker_connection_id == connection_id,
+            DeploymentTrade.tenant_id == tenant_id,
+        )
+    )
+    for dt, sd, sc in dt_result:
+        items.append(ActivityItemResponse(
+            id=str(dt.id),
+            source="deployment",
+            symbol=sd.symbol,
+            action=dt.action.upper(),
+            quantity=float(dt.quantity),
+            fill_price=float(dt.fill_price) if dt.fill_price is not None else None,
+            status=dt.status,
+            order_id=dt.broker_order_id,
+            strategy_name=sc.name,
+            created_at=dt.created_at.isoformat() if dt.created_at else "",
+        ))
+
+    # Sort combined list by created_at descending
+    items.sort(key=lambda x: x.created_at, reverse=True)
+    total = len(items)
+    page = items[offset: offset + limit]
+
+    return ActivityResponse(items=page, total=total, offset=offset, limit=limit)
