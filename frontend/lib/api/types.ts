@@ -150,7 +150,8 @@ export interface AnalyticsTrade {
 }
 
 export interface HealthStatus {
-  status: string;
+  database: string;
+  redis: string;
 }
 
 // Hosted Strategies

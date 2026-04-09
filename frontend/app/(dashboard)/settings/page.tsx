@@ -18,7 +18,8 @@ export default function SettingsPage() {
   const token = webhookConfig?.token ?? "";
   const { onCopy, hasCopied } = useClipboard(token);
 
-  const isHealthy = health?.status === "ok";
+  const dbOk = health?.database === "ok";
+  const redisOk = health?.redis === "ok";
 
   return (
     <Box>
@@ -39,15 +40,15 @@ export default function SettingsPage() {
               <Flex justify="space-between" align="center">
                 <Text>Database</Text>
                 <StatusBadge
-                  variant={isHealthy ? "success" : "error"}
-                  text={isHealthy ? "Connected" : "Disconnected"}
+                  variant={dbOk ? "success" : "error"}
+                  text={dbOk ? "Connected" : "Disconnected"}
                 />
               </Flex>
               <Flex justify="space-between" align="center">
                 <Text>Redis</Text>
                 <StatusBadge
-                  variant={isHealthy ? "success" : "error"}
-                  text={isHealthy ? "Connected" : "Disconnected"}
+                  variant={redisOk ? "success" : "error"}
+                  text={redisOk ? "Connected" : "Disconnected"}
                 />
               </Flex>
             </Flex>

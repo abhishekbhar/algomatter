@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import PaperPosition, Strategy, StrategyResult
+from app.analytics.metrics import compute_metrics
+from app.db.models import (
+    PaperTrade,
+    PaperTradingSession,
+    PaperPosition,
+    Strategy,
+    StrategyResult,
+    WebhookSignal,
+)
 
 
 async def get_overview(session: AsyncSession, tenant_id: uuid.UUID) -> dict:
-    """Return a portfolio-level overview for the tenant.
-
-    Keys: total_pnl, active_strategies, open_positions, trades_today
-    """
+    """Return a portfolio-level overview for the tenant."""
     # Active strategies
     active_q = await session.execute(
         select(func.count())
@@ -23,7 +29,7 @@ async def get_overview(session: AsyncSession, tenant_id: uuid.UUID) -> dict:
     )
     active_strategies = active_q.scalar() or 0
 
-    # Sum PnL from completed results (load in Python for DB-engine portability)
+    # Sum PnL from completed StrategyResults
     results_q = await session.execute(
         select(StrategyResult.metrics)
         .where(
@@ -37,6 +43,18 @@ async def get_overview(session: AsyncSession, tenant_id: uuid.UUID) -> dict:
         if metrics and "total_return" in metrics:
             total_pnl += float(metrics["total_return"])
 
+    # Sum realized PnL from paper trades (webhook strategies)
+    paper_pnl_q = await session.execute(
+        select(func.sum(PaperTrade.realized_pnl))
+        .where(
+            PaperTrade.tenant_id == tenant_id,
+            PaperTrade.realized_pnl.isnot(None),
+        )
+    )
+    paper_pnl = paper_pnl_q.scalar()
+    if paper_pnl is not None:
+        total_pnl += float(paper_pnl)
+
     # Open paper positions
     open_pos_q = await session.execute(
         select(func.count())
@@ -48,10 +66,28 @@ async def get_overview(session: AsyncSession, tenant_id: uuid.UUID) -> dict:
     )
     open_positions = open_pos_q.scalar() or 0
 
-    # Trades today — count paper trading sessions started today
-    # Simplified: just return 0 for now; real implementation would count
-    # webhook signals or paper trades executed today.
-    trades_today = 0
+    # Trades today — paper trades + filled webhook signals executed today (UTC)
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    paper_today_q = await session.execute(
+        select(func.count())
+        .select_from(PaperTrade)
+        .where(
+            PaperTrade.tenant_id == tenant_id,
+            PaperTrade.executed_at >= today_start,
+        )
+    )
+    webhook_today_q = await session.execute(
+        select(func.count())
+        .select_from(WebhookSignal)
+        .where(
+            WebhookSignal.tenant_id == tenant_id,
+            WebhookSignal.execution_result == "filled",
+            WebhookSignal.received_at >= today_start,
+        )
+    )
+    trades_today = (paper_today_q.scalar() or 0) + (webhook_today_q.scalar() or 0)
 
     return {
         "total_pnl": total_pnl,
@@ -64,7 +100,8 @@ async def get_overview(session: AsyncSession, tenant_id: uuid.UUID) -> dict:
 async def get_strategy_metrics(
     session: AsyncSession, strategy_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> dict | None:
-    """Return metrics from the latest completed StrategyResult for a strategy."""
+    """Return metrics from StrategyResult, falling back to PaperTrade data."""
+    # Try StrategyResult first
     result = await session.execute(
         select(StrategyResult)
         .where(
@@ -77,15 +114,22 @@ async def get_strategy_metrics(
         .limit(1)
     )
     row = result.scalar_one_or_none()
-    if not row:
+    if row:
+        return row.metrics
+
+    # Fall back to PaperTrade data
+    trades, equity_curve, initial_capital = await _load_paper_trade_data(
+        session, strategy_id, tenant_id
+    )
+    if not trades:
         return None
-    return row.metrics
+    return compute_metrics(trades, equity_curve, initial_capital)
 
 
 async def get_equity_curve(
     session: AsyncSession, strategy_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> list[dict]:
-    """Return equity curve from the latest completed StrategyResult."""
+    """Return equity curve from StrategyResult, falling back to PaperTrade data."""
     result = await session.execute(
         select(StrategyResult.equity_curve)
         .where(
@@ -98,13 +142,20 @@ async def get_equity_curve(
         .limit(1)
     )
     row = result.scalar_one_or_none()
-    return row if row else []
+    if row:
+        return row
+
+    # Fall back to PaperTrade data
+    _, equity_curve, _ = await _load_paper_trade_data(
+        session, strategy_id, tenant_id
+    )
+    return equity_curve
 
 
 async def get_trades(
     session: AsyncSession, strategy_id: uuid.UUID, tenant_id: uuid.UUID
 ) -> list[dict]:
-    """Return trade log from the latest completed StrategyResult."""
+    """Return trade log from StrategyResult, falling back to PaperTrade data."""
     result = await session.execute(
         select(StrategyResult.trade_log)
         .where(
@@ -117,4 +168,77 @@ async def get_trades(
         .limit(1)
     )
     row = result.scalar_one_or_none()
-    return row if row else []
+    if row:
+        return row
+
+    # Fall back to PaperTrade data
+    trades, _, _ = await _load_paper_trade_data(session, strategy_id, tenant_id)
+    return trades
+
+
+async def _load_paper_trade_data(
+    session: AsyncSession,
+    strategy_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+) -> tuple[list[dict], list[dict], float]:
+    """Load paper trade records for a strategy and return (trades, equity_curve, initial_capital).
+
+    Joins PaperTrade → PaperTradingSession to find trades for this strategy.
+    Trades are formatted as AnalyticsTrade dicts.
+    Equity curve is built cumulatively from initial_capital + realized_pnl.
+    """
+    # Get the most recent session for this strategy to obtain initial_capital
+    session_q = await session.execute(
+        select(PaperTradingSession)
+        .where(
+            PaperTradingSession.strategy_id == strategy_id,
+            PaperTradingSession.tenant_id == tenant_id,
+        )
+        .order_by(PaperTradingSession.started_at.desc())
+        .limit(1)
+    )
+    paper_session = session_q.scalar_one_or_none()
+    initial_capital = float(paper_session.initial_capital) if paper_session else 10000.0
+
+    # Fetch all paper trades for sessions belonging to this strategy, ordered by time
+    trades_q = await session.execute(
+        select(PaperTrade)
+        .join(PaperTradingSession, PaperTrade.session_id == PaperTradingSession.id)
+        .where(
+            PaperTradingSession.strategy_id == strategy_id,
+            PaperTrade.tenant_id == tenant_id,
+        )
+        .order_by(PaperTrade.executed_at.asc())
+    )
+    paper_trades = trades_q.scalars().all()
+
+    if not paper_trades:
+        return [], [], initial_capital
+
+    # Build trade list (AnalyticsTrade format)
+    trade_list: list[dict] = []
+    for pt in paper_trades:
+        trade_list.append({
+            "timestamp": pt.executed_at.isoformat() if pt.executed_at else "",
+            "symbol": pt.symbol,
+            "action": pt.action,
+            "quantity": float(pt.quantity),
+            "fill_price": float(pt.fill_price),
+            "status": "filled",
+            "pnl": float(pt.realized_pnl) if pt.realized_pnl is not None else 0.0,
+        })
+
+    # Build cumulative equity curve
+    equity = initial_capital
+    equity_curve: list[dict] = [
+        {"timestamp": paper_trades[0].executed_at.isoformat(), "equity": equity}
+    ]
+    for pt in paper_trades:
+        pnl = float(pt.realized_pnl) if pt.realized_pnl is not None else 0.0
+        equity += pnl
+        equity_curve.append({
+            "timestamp": pt.executed_at.isoformat() if pt.executed_at else "",
+            "equity": equity,
+        })
+
+    return trade_list, equity_curve, initial_capital

@@ -1,20 +1,21 @@
 "use client";
 import {
   Box, Heading, FormControl, FormLabel, Input, Select, Radio, RadioGroup,
-  Stack, Switch, Textarea, Button, VStack, useToast, NumberInput,
+  Stack, Switch, Button, VStack, useToast, NumberInput,
   NumberInputField, Divider, Text, Spinner, Center, Flex,
 } from "@chakra-ui/react";
 import { useRouter, useParams } from "next/navigation";
-import { useState, useEffect } from "react";
-import { useBrokers, useStrategy } from "@/lib/hooks/useApi";
+import { useState, useEffect, useCallback } from "react";
+import { useBrokers, useStrategy, useWebhookConfig } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
+import { WebhookParameterBuilder } from "@/components/strategies/WebhookParameterBuilder";
 
 interface StrategyForm {
   name: string;
   broker_connection_id: string;
   mode: string;
   is_active: boolean;
-  mapping_template: string;
+  mapping_template_obj: Record<string, unknown> | null;
   symbol_whitelist: string;
   symbol_blacklist: string;
   max_positions: number;
@@ -28,13 +29,14 @@ export default function EditStrategyPage() {
   const toast = useToast();
   const { data: brokers } = useBrokers();
   const { data: strategy, isLoading } = useStrategy(id);
+  const { data: webhookConfig } = useWebhookConfig();
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<StrategyForm>({
     name: "",
     broker_connection_id: "",
     mode: "paper",
     is_active: true,
-    mapping_template: "",
+    mapping_template_obj: null,
     symbol_whitelist: "",
     symbol_blacklist: "",
     max_positions: 10,
@@ -49,7 +51,9 @@ export default function EditStrategyPage() {
       broker_connection_id: strategy.broker_connection_id ?? "",
       mode: strategy.mode ?? "paper",
       is_active: strategy.is_active,
-      mapping_template: strategy.mapping_template ? JSON.stringify(strategy.mapping_template, null, 2) : "",
+      mapping_template_obj: strategy.mapping_template
+        ? (strategy.mapping_template as Record<string, unknown>)
+        : null,
       symbol_whitelist: Array.isArray(rules.symbol_whitelist)
         ? (rules.symbol_whitelist as string[]).join(", ")
         : "",
@@ -61,8 +65,23 @@ export default function EditStrategyPage() {
     });
   }, [strategy]);
 
+  const handleMappingChange = useCallback(
+    (val: Record<string, unknown>) => setForm((prev) => ({ ...prev, mapping_template_obj: val })),
+    []
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const mt = form.mapping_template_obj ?? {};
+    if (mt.order_type === "LIMIT" && !mt.price) {
+      toast({
+        title: "Price required",
+        description: "Set a price value or signal field when order type is LIMIT.",
+        status: "error",
+        duration: 4000,
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       const payload = {
@@ -70,7 +89,7 @@ export default function EditStrategyPage() {
         broker_connection_id: form.broker_connection_id || null,
         mode: form.mode,
         is_active: form.is_active,
-        mapping_template: form.mapping_template ? JSON.parse(form.mapping_template) : null,
+        mapping_template: form.mapping_template_obj ?? undefined,
         rules: {
           symbol_whitelist: form.symbol_whitelist
             ? form.symbol_whitelist.split(",").map((s) => s.trim()).filter(Boolean)
@@ -97,7 +116,7 @@ export default function EditStrategyPage() {
   }
 
   return (
-    <Box maxW="600px">
+    <Box maxW="900px">
       <Heading size="lg" mb={6}>Edit Strategy</Heading>
       <form onSubmit={handleSubmit}>
         <VStack spacing={4} align="stretch">
@@ -146,15 +165,14 @@ export default function EditStrategyPage() {
             />
           </FormControl>
 
-          <FormControl>
-            <FormLabel>Mapping Template (JSON)</FormLabel>
-            <Textarea
-              value={form.mapping_template}
-              onChange={(e) => setForm({ ...form, mapping_template: e.target.value })}
-              placeholder='{"symbol": "$.ticker", "action": "$.side"}'
-              rows={4}
+          <Box>
+            <Text fontWeight="medium" mb={3}>Signal Mapping</Text>
+            <WebhookParameterBuilder
+              value={form.mapping_template_obj}
+              onChange={handleMappingChange}
+              webhookUrl={webhookConfig?.webhook_url}
             />
-          </FormControl>
+          </Box>
 
           <Divider />
           <Text fontWeight="bold">Rules</Text>
