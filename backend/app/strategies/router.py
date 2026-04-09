@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user, get_tenant_session
-from app.db.models import Strategy, WebhookSignal, StrategyResult, PaperTradingSession
+from app.db.models import Strategy, WebhookSignal, StrategyResult, PaperTradingSession, PaperTrade, PaperPosition
 from app.strategies.schemas import (
     CreateStrategyRequest,
     StrategyResponse,
@@ -165,7 +165,15 @@ async def delete_strategy(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Strategy not found",
         )
-    # Delete related records first to avoid FK constraint violations
+    # Delete related records in dependency order to avoid FK constraint violations.
+    # PaperTrade and PaperPosition reference PaperTradingSession so must be deleted first.
+    sessions_q = await session.execute(
+        select(PaperTradingSession.id).where(PaperTradingSession.strategy_id == strategy_id)
+    )
+    session_ids = [row[0] for row in sessions_q.all()]
+    if session_ids:
+        await session.execute(delete(PaperTrade).where(PaperTrade.session_id.in_(session_ids)))
+        await session.execute(delete(PaperPosition).where(PaperPosition.session_id.in_(session_ids)))
     await session.execute(delete(WebhookSignal).where(WebhookSignal.strategy_id == strategy_id))
     await session.execute(delete(StrategyResult).where(StrategyResult.strategy_id == strategy_id))
     await session.execute(delete(PaperTradingSession).where(PaperTradingSession.strategy_id == strategy_id))

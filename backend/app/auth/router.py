@@ -145,6 +145,23 @@ async def refresh(
     )
 
 
+@router.post("/logout", status_code=204)
+async def logout(
+    body: RefreshRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Invalidate the provided refresh token so it cannot be reused."""
+    token_hash = hash_refresh_token(body.refresh_token)
+    result = await session.execute(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        await session.delete(existing)
+        await session.commit()
+    # Always return 204 — don't leak whether the token existed
+
+
 @router.get("/me", response_model=UserResponse)
 async def me(
     current_user: dict = Depends(get_current_user),

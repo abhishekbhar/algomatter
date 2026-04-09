@@ -1,5 +1,7 @@
 "use client";
 import useSWR, { SWRConfiguration } from "swr";
+import { useToast } from "@chakra-ui/react";
+import { useCallback } from "react";
 import { apiClient } from "@/lib/api/client";
 import { POLLING_INTERVALS } from "@/lib/utils/constants";
 import type {
@@ -43,7 +45,20 @@ function fetcher<T>(path: string): Promise<T> {
 }
 
 function useApiGet<T>(path: string | null, config?: SWRConfiguration) {
-  return useSWR<T>(path, fetcher, config);
+  const toast = useToast();
+  const onError = useCallback(() => {
+    // Only show toast once per error (deduplicated by SWR)
+    toast({
+      title: "Failed to load data",
+      description: "Check your connection and try refreshing.",
+      status: "error",
+      duration: 4000,
+      isClosable: true,
+      id: `api-error-${path ?? "unknown"}`,
+    });
+  }, [toast, path]);
+
+  return useSWR<T>(path, fetcher, { onError, ...config });
 }
 
 export function useMe() {
@@ -78,10 +93,15 @@ export function useWebhookConfig() {
   return useApiGet<WebhookConfig>("/api/v1/webhooks/config");
 }
 
-export function useWebhookSignals() {
-  return useApiGet<WebhookSignal[]>("/api/v1/webhooks/signals", {
-    refreshInterval: POLLING_INTERVALS.SIGNALS,
-  });
+export function useWebhookSignals(limit = 100) {
+  const result = useApiGet<{ signals: WebhookSignal[]; total: number; offset: number; limit: number }>(
+    `/api/v1/webhooks/signals?limit=${limit}`,
+    { refreshInterval: POLLING_INTERVALS.SIGNALS },
+  );
+  return {
+    ...result,
+    data: result.data?.signals,
+  };
 }
 
 export function useStrategySignals(strategyId: string | null) {

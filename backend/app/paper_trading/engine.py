@@ -32,14 +32,20 @@ async def execute_paper_trade(
     if paper_session is None or paper_session.status != "active":
         return "rejected"
 
-    fill_price = Decimal(str(signal.price)) if signal.price else Decimal(0)
+    if not signal.price or signal.price <= 0:
+        return "rejected"
+    fill_price = Decimal(str(signal.price))
+
+    if not signal.quantity or signal.quantity <= 0:
+        return "rejected"
     quantity = Decimal(str(signal.quantity))
+
     action = signal.action.upper()
 
     if action == "BUY":
         cost = fill_price * quantity
         current_balance = Decimal(str(paper_session.current_balance))
-        if cost > current_balance and fill_price > 0:
+        if cost > current_balance:
             return "rejected"
 
         # Create position

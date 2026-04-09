@@ -15,7 +15,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -67,7 +67,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await fetchMe();
   }, [fetchMe]);
 
-  const logout = useCallback(() => { clearTokens(); setUser(null); }, []);
+  const logout = useCallback(async () => {
+    const rt = getRefreshToken();
+    if (rt) {
+      // Best-effort: invalidate token on server; ignore network errors
+      try {
+        await apiClient("/api/v1/auth/logout", { method: "POST", body: { refresh_token: rt } });
+      } catch {
+        // ignore — token will expire naturally
+      }
+    }
+    clearTokens();
+    setUser(null);
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, isLoading, login, signup, logout }}>
