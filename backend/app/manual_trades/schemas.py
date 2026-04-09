@@ -33,6 +33,7 @@ class ManualTradeResponse(BaseModel):
     position_model: str | None
     take_profit: float | None
     stop_loss: float | None
+    position_side: str | None = None
     fill_price: float | None
     fill_quantity: float | None
     status: str

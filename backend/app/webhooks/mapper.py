@@ -13,12 +13,16 @@ def apply_mapping(payload: dict, template: dict) -> StandardSignal:
         if isinstance(expr, str) and expr.startswith("$."):
             matches = parse(expr).find(payload)
             if not matches:
-                raise ValueError(
-                    f"Failed to resolve JSONPath '{expr}' for field '{field}'"
-                )
+                continue  # skip; Pydantic raises for required fields, optional fields get None default
             resolved[field] = matches[0].value
         else:
             resolved[field] = expr
+
+    # Validate required fields are present
+    required = {"symbol", "exchange", "action", "quantity", "order_type", "product_type"}
+    missing = required - resolved.keys()
+    if missing:
+        raise ValueError(f"Required field(s) missing from payload: {', '.join(sorted(missing))}")
 
     # Normalize
     resolved["action"] = str(resolved["action"]).upper()

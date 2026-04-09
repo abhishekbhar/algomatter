@@ -43,7 +43,7 @@ const DEFAULT_FUTURES_ROWS: BuilderRows = {
   order_type:     { source: "fixed",  fixedValue: "MARKET",   signalField: "order_type" },
   quantity:       { source: "signal", fixedValue: 1,          signalField: "qty" },
   leverage:       { source: "fixed",  fixedValue: "10",       signalField: "leverage" },
-  position_model: { source: "fixed",  fixedValue: "isolated", signalField: "position_model" },
+  position_model: { source: "fixed",  fixedValue: "cross",    signalField: "position_model" },
 };
 
 const DEFAULT_SPOT_ROWS: BuilderRows = {
@@ -56,9 +56,10 @@ const DEFAULT_SPOT_ROWS: BuilderRows = {
 const EMPTY_ROW: RowState = { source: "signal", fixedValue: null, signalField: "" };
 
 const DEFAULT_FUTURES_OPTIONAL: BuilderRows = {
-  price:        { ...EMPTY_ROW },
-  take_profit:  { ...EMPTY_ROW },
-  stop_loss:    { ...EMPTY_ROW },
+  price:         { ...EMPTY_ROW },
+  position_side: { source: "fixed", fixedValue: null, signalField: "position_side" },
+  take_profit:   { ...EMPTY_ROW },
+  stop_loss:     { ...EMPTY_ROW },
 };
 
 const DEFAULT_SPOT_OPTIONAL: BuilderRows = {
@@ -81,6 +82,7 @@ function computeMapping(
       template[key] = `$.${row.signalField}`;
     } else {
       const raw = row.fixedValue;
+      if (raw === null || raw === "") continue; // skip unset optional fixed fields
       if (NUMERIC_KEYS.has(key) && raw !== null && raw !== "") {
         const n = Number(raw);
         template[key] = isNaN(n) ? raw : n;
@@ -109,7 +111,7 @@ export function WebhookParameterBuilder({ onChange, webhookUrl }: Props) {
     mode === "futures" ? setFuturesOptional : setSpotOptional;
   const optionalKeys =
     mode === "futures"
-      ? (["price", "take_profit", "stop_loss"] as const)
+      ? (["price", "position_side", "take_profit", "stop_loss"] as const)
       : (["price"] as const);
 
   const currentMapping = useMemo(
@@ -244,6 +246,20 @@ export function WebhookParameterBuilder({ onChange, webhookUrl }: Props) {
             selectOptions={[
               { value: "isolated", label: "Isolated" },
               { value: "cross", label: "Cross" },
+            ]}
+            {...commonProps}
+          />
+        );
+      case "position_side":
+        return (
+          <ParameterRow
+            key={key}
+            label="Position Side"
+            inputType="select"
+            selectOptions={[
+              { value: "", label: "Auto (long)" },
+              { value: "long", label: "Long" },
+              { value: "short", label: "Short" },
             ]}
             {...commonProps}
           />

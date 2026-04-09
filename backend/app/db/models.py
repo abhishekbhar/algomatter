@@ -453,6 +453,7 @@ class ManualTrade(Base):
     trigger_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     leverage: Mapped[int | None] = mapped_column(Integer, nullable=True)
     position_model: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    position_side: Mapped[str | None] = mapped_column(String(16), nullable=True)
     take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
     stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
     fill_price: Mapped[float | None] = mapped_column(Float, nullable=True)
