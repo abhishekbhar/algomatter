@@ -215,13 +215,13 @@ export function useDeployments(strategyId: string | undefined) {
 
 export function useDeployment(id: string | undefined, config?: { refreshInterval?: number }) {
   return useApiGet<Deployment>(id ? `/api/v1/deployments/${id}` : null, {
-    refreshInterval: config?.refreshInterval ?? 2000,
+    refreshInterval: config?.refreshInterval ?? POLLING_INTERVALS.DEPLOYMENT,
   });
 }
 
 export function useBacktestDeployments() {
   return useApiGet<Deployment[]>("/api/v1/deployments?mode=backtest", {
-    refreshInterval: 5000,
+    refreshInterval: POLLING_INTERVALS.BACKTEST_STATUS,
   });
 }
 
@@ -235,7 +235,7 @@ export function useDeploymentResults(id: string | undefined) {
 
 export function useActiveDeployments() {
   const result = useApiGet<Deployment[]>("/api/v1/deployments", {
-    refreshInterval: 5000,
+    refreshInterval: POLLING_INTERVALS.DEPLOYMENT,
   });
   const active = (result.data ?? []).filter(
     (d) => d.status === "running" || d.status === "paused"
@@ -254,7 +254,7 @@ export function useDeploymentLogs(id: string | undefined, offset = 0, limit = 50
 
 // Live Trading
 export function useAggregateStats() {
-  return useApiGet<AggregateStats>("/api/v1/deployments/aggregate-stats", { refreshInterval: 2000 });
+  return useApiGet<AggregateStats>("/api/v1/deployments/aggregate-stats", { refreshInterval: POLLING_INTERVALS.LIVE_TRADING });
 }
 
 export function useRecentTrades(limit = 20) {
