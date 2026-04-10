@@ -100,7 +100,7 @@ async def test_execute_live_mode_enqueues_arq_job():
     session.commit = AsyncMock()
     arq_redis = AsyncMock()
 
-    results = await execute([strategy], _make_payload(), redis, session, arq_redis)
+    results = await execute([strategy], _make_payload(), redis, session, arq_redis, tenant_id=uuid.uuid4())
 
     assert results[0].execution_result == "queued"
     arq_redis.enqueue_job.assert_called_once()
