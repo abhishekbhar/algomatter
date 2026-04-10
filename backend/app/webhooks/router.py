@@ -1,4 +1,5 @@
 import json
+import json as _json
 import secrets
 import time
 import uuid
@@ -18,6 +19,38 @@ from app.webhooks.processor import evaluate_rules
 # Public router – webhook ingestion (token-based auth, no JWT)
 # ---------------------------------------------------------------------------
 webhook_public_router = APIRouter(tags=["webhooks"])
+
+_STRATEGY_CACHE_TTL = 60  # seconds
+
+
+async def _get_active_strategies(redis, session, tenant_id):
+    """Return active strategies for tenant, using Redis cache (60 s TTL)."""
+    cache_key = f"strategies:active:{tenant_id}"
+    cached = await redis.get(cache_key)
+    if cached:
+        return _json.loads(cached)
+
+    result = await session.execute(
+        select(Strategy).where(
+            Strategy.tenant_id == tenant_id,
+            Strategy.is_active.is_(True),
+        )
+    )
+    strategies = result.scalars().all()
+
+    payload = [
+        {
+            "id": str(s.id),
+            "mapping_template": s.mapping_template,
+            "mode": s.mode,
+            "broker_connection_id": str(s.broker_connection_id) if s.broker_connection_id else None,
+            "rules": s.rules,
+            "name": s.name,
+        }
+        for s in strategies
+    ]
+    await redis.set(cache_key, _json.dumps(payload), ex=_STRATEGY_CACHE_TTL)
+    return payload
 
 
 @webhook_public_router.post("/api/v1/webhook/{token}")
@@ -44,19 +77,14 @@ async def receive_webhook(
     # 3. Record start time
     start_time = time.perf_counter()
 
-    # 4. Fetch all active strategies for this user
-    strat_result = await session.execute(
-        select(Strategy).where(
-            Strategy.tenant_id == user.id,
-            Strategy.is_active.is_(True),
-        )
-    )
-    strategies = strat_result.scalars().all()
+    # 4. Fetch all active strategies for this user (Redis-cached, 60 s TTL)
+    redis = request.app.state.redis
+    strategy_dicts = await _get_active_strategies(redis, session, user.id)
 
     signals_processed = 0
 
-    for strategy in strategies:
-        if not strategy.mapping_template:
+    for strategy in strategy_dicts:
+        if not strategy["mapping_template"]:
             continue
 
         parsed_signal = None
@@ -66,7 +94,7 @@ async def receive_webhook(
         execution_detail = None
 
         try:
-            signal = apply_mapping(payload, strategy.mapping_template)
+            signal = apply_mapping(payload, strategy["mapping_template"])
             parsed_signal = signal.model_dump(mode="json")
         except (ValueError, Exception) as exc:
             rule_result_str = "mapping_error"
@@ -74,7 +102,7 @@ async def receive_webhook(
             # Log the signal even on mapping error
             ws = WebhookSignal(
                 tenant_id=user.id,
-                strategy_id=strategy.id,
+                strategy_id=uuid.UUID(strategy["id"]),
                 raw_payload=payload,
                 parsed_signal=None,
                 rule_result=rule_result_str,
@@ -90,20 +118,20 @@ async def receive_webhook(
         # Evaluate rules (pass 0 for open_positions and signals_today for now)
         rule_out = evaluate_rules(
             signal,
-            strategy.rules or {},
+            strategy["rules"] or {},
             open_positions=0,
             signals_today=0,
         )
 
         if rule_out.passed:
             rule_result_str = "passed"
-            if strategy.mode == "paper":
+            if strategy["mode"] == "paper":
                 from app.paper_trading.engine import execute_paper_trade
                 from app.db.models import PaperTradingSession
 
                 ps_result = await session.execute(
                     select(PaperTradingSession).where(
-                        PaperTradingSession.strategy_id == strategy.id,
+                        PaperTradingSession.strategy_id == uuid.UUID(strategy["id"]),
                         PaperTradingSession.status == "active",
                     )
                 )
@@ -114,8 +142,8 @@ async def receive_webhook(
                     )
                 else:
                     execution_result = "no_active_session"
-            elif strategy.mode == "live":
-                if not strategy.broker_connection_id:
+            elif strategy["mode"] == "live":
+                if not strategy["broker_connection_id"]:
                     execution_result = "no_broker_connection"
                 else:
                     from app.brokers.factory import get_broker
@@ -125,7 +153,7 @@ async def receive_webhook(
 
                     bc_result = await session.execute(
                         select(BrokerConnection).where(
-                            BrokerConnection.id == strategy.broker_connection_id,
+                            BrokerConnection.id == uuid.UUID(strategy["broker_connection_id"]),
                             BrokerConnection.tenant_id == user.id,
                         )
                     )
@@ -165,7 +193,7 @@ async def receive_webhook(
 
         ws = WebhookSignal(
             tenant_id=user.id,
-            strategy_id=strategy.id,
+            strategy_id=uuid.UUID(strategy["id"]),
             raw_payload=payload,
             parsed_signal=parsed_signal,
             rule_result=rule_result_str,

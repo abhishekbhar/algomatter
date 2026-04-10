@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/v1/strategies", tags=["strategies"])
 )
 async def create_strategy(
     body: CreateStrategyRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -37,6 +38,9 @@ async def create_strategy(
     session.add(strategy)
     await session.commit()
     await session.refresh(strategy)
+
+    redis = request.app.state.redis
+    await redis.delete(f"strategies:active:{tenant_id}")
 
     return StrategyResponse(
         id=strategy.id,
@@ -110,6 +114,7 @@ async def get_strategy(
 async def update_strategy(
     strategy_id: uuid.UUID,
     body: UpdateStrategyRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -134,6 +139,9 @@ async def update_strategy(
     await session.commit()
     await session.refresh(strategy)
 
+    redis = request.app.state.redis
+    await redis.delete(f"strategies:active:{tenant_id}")
+
     return StrategyResponse(
         id=strategy.id,
         name=strategy.name,
@@ -149,6 +157,7 @@ async def update_strategy(
 @router.delete("/{strategy_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_strategy(
     strategy_id: uuid.UUID,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_tenant_session),
 ):
@@ -179,4 +188,8 @@ async def delete_strategy(
     await session.execute(delete(PaperTradingSession).where(PaperTradingSession.strategy_id == strategy_id))
     await session.delete(strategy)
     await session.commit()
+
+    redis = request.app.state.redis
+    await redis.delete(f"strategies:active:{tenant_id}")
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)
