@@ -1,5 +1,4 @@
 import json
-import json as _json
 import secrets
 import time
 import uuid
@@ -26,9 +25,12 @@ _STRATEGY_CACHE_TTL = 60  # seconds
 async def _get_active_strategies(redis, session, tenant_id):
     """Return active strategies for tenant, using Redis cache (60 s TTL)."""
     cache_key = f"strategies:active:{tenant_id}"
-    cached = await redis.get(cache_key)
-    if cached:
-        return _json.loads(cached)
+    try:
+        cached = await redis.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass  # Redis unavailable — fall through to DB query
 
     result = await session.execute(
         select(Strategy).where(
@@ -49,7 +51,10 @@ async def _get_active_strategies(redis, session, tenant_id):
         }
         for s in strategies
     ]
-    await redis.set(cache_key, _json.dumps(payload), ex=_STRATEGY_CACHE_TTL)
+    try:
+        await redis.set(cache_key, json.dumps(payload), ex=_STRATEGY_CACHE_TTL)
+    except Exception:
+        pass  # Redis unavailable — serve from DB without caching
     return payload
 
 

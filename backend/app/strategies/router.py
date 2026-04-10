@@ -39,8 +39,11 @@ async def create_strategy(
     await session.commit()
     await session.refresh(strategy)
 
-    redis = request.app.state.redis
-    await redis.delete(f"strategies:active:{tenant_id}")
+    try:
+        redis = request.app.state.redis
+        await redis.delete(f"strategies:active:{tenant_id}")
+    except Exception:
+        pass  # Cache invalidation failed — TTL will expire the stale entry
 
     return StrategyResponse(
         id=strategy.id,
@@ -139,8 +142,11 @@ async def update_strategy(
     await session.commit()
     await session.refresh(strategy)
 
-    redis = request.app.state.redis
-    await redis.delete(f"strategies:active:{tenant_id}")
+    try:
+        redis = request.app.state.redis
+        await redis.delete(f"strategies:active:{tenant_id}")
+    except Exception:
+        pass  # Cache invalidation failed — TTL will expire the stale entry
 
     return StrategyResponse(
         id=strategy.id,
@@ -189,7 +195,10 @@ async def delete_strategy(
     await session.delete(strategy)
     await session.commit()
 
-    redis = request.app.state.redis
-    await redis.delete(f"strategies:active:{tenant_id}")
+    try:
+        redis = request.app.state.redis
+        await redis.delete(f"strategies:active:{tenant_id}")
+    except Exception:
+        pass  # Cache invalidation failed — TTL will expire the stale entry
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
