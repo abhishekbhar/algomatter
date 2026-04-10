@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +34,6 @@ async def test_ensure_unique_slug_no_collision():
     mock_result.scalars.return_value.all.return_value = []
     session.execute.return_value = mock_result
 
-    import uuid
     slug = await ensure_unique_slug(session, uuid.uuid4(), "nifty-momentum")
     assert slug == "nifty-momentum"
 
@@ -44,7 +45,6 @@ async def test_ensure_unique_slug_one_collision():
     mock_result.scalars.return_value.all.return_value = ["nifty-momentum"]
     session.execute.return_value = mock_result
 
-    import uuid
     slug = await ensure_unique_slug(session, uuid.uuid4(), "nifty-momentum")
     assert slug == "nifty-momentum-2"
 
@@ -58,6 +58,5 @@ async def test_ensure_unique_slug_two_collisions():
     ]
     session.execute.return_value = mock_result
 
-    import uuid
     slug = await ensure_unique_slug(session, uuid.uuid4(), "nifty-momentum")
     assert slug == "nifty-momentum-3"

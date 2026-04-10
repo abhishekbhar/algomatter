@@ -1,10 +1,13 @@
 import re
 import uuid
 
-from sqlalchemy import column, select, text
+from sqlalchemy import column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Strategy
+
+# NOTE: This module requires the `slug` column to exist on the `strategies` table.
+# It is added in the Task 2 migration (a1b2c3d4e5f6_strategy_slug).
 
 
 def generate_slug(name: str) -> str:
