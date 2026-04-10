@@ -192,7 +192,6 @@ async def execute(
                 "execute_live_order_task",
                 job_payload,
                 _job_id=f"live-order:{signal_id}",
-                _max_retries=2,
             )
             await increment_signals_today(redis, strategy["id"])
             results.append(SignalResult(
@@ -340,7 +339,7 @@ async def recover_queued_signals(ctx: dict) -> None:
             select(WebhookSignal, Strategy)
             .join(Strategy, WebhookSignal.strategy_id == Strategy.id)
             .where(
-                WebhookSignal.execution_result == "queued",
+                WebhookSignal.execution_result.in_(["queued", "recovering"]),
                 WebhookSignal.received_at < cutoff,
                 Strategy.mode == "live",
                 Strategy.broker_connection_id.isnot(None),
@@ -353,10 +352,7 @@ async def recover_queued_signals(ctx: dict) -> None:
         signal_ids = [ws.id for ws, _ in rows]
         await session.execute(
             update(WebhookSignal)
-            .where(
-                WebhookSignal.id.in_(signal_ids),
-                WebhookSignal.execution_result == "queued",  # double-check
-            )
+            .where(WebhookSignal.id.in_(signal_ids))
             .values(execution_result="recovering")
         )
         await session.commit()
@@ -378,7 +374,6 @@ async def recover_queued_signals(ctx: dict) -> None:
             "execute_live_order_task",
             job_payload,
             _job_id=job_id,
-            _max_retries=2,
         )
         recovered += 1
         logger.info("recover_queued_signals: re-enqueued signal %s (job %s)", ws.id, job_id)
