@@ -2,3 +2,4 @@
 .worktrees/
 .gitnexus
 .gitnexus-local
+.direnv/
