@@ -1,11 +1,14 @@
 import uuid
 from decimal import Decimal
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import PaperPosition, PaperTrade, PaperTradingSession
 from app.webhooks.schemas import StandardSignal
+
+logger = structlog.get_logger(__name__)
 
 
 async def execute_paper_trade(
@@ -30,13 +33,16 @@ async def execute_paper_trade(
     )
     paper_session = result.scalar_one_or_none()
     if paper_session is None or paper_session.status != "active":
+        logger.warning("paper_trade_rejected", reason="no_active_session", paper_session_id=str(paper_session_id))
         return "rejected"
 
     if not signal.price or signal.price <= 0:
+        logger.warning("paper_trade_rejected", reason="no_price", symbol=signal.symbol, action=signal.action)
         return "rejected"
     fill_price = Decimal(str(signal.price))
 
     if not signal.quantity or signal.quantity <= 0:
+        logger.warning("paper_trade_rejected", reason="no_quantity", symbol=signal.symbol, action=signal.action)
         return "rejected"
     quantity = Decimal(str(signal.quantity))
 
@@ -46,6 +52,13 @@ async def execute_paper_trade(
         cost = fill_price * quantity
         current_balance = Decimal(str(paper_session.current_balance))
         if cost > current_balance:
+            logger.warning(
+                "paper_trade_rejected",
+                reason="insufficient_balance",
+                symbol=signal.symbol,
+                cost=str(cost),
+                balance=str(current_balance),
+            )
             return "rejected"
 
         # Create position
@@ -79,7 +92,15 @@ async def execute_paper_trade(
 
         # Deduct balance
         paper_session.current_balance = float(current_balance - cost)
-
+        logger.info(
+            "paper_trade_filled",
+            action="BUY",
+            symbol=signal.symbol,
+            quantity=str(quantity),
+            fill_price=str(fill_price),
+            cost=str(cost),
+            balance_after=str(paper_session.current_balance),
+        )
         return "filled"
 
     elif action == "SELL":
@@ -93,6 +114,7 @@ async def execute_paper_trade(
         )
         position = pos_result.scalar_one_or_none()
         if position is None:
+            logger.warning("paper_trade_rejected", reason="no_open_position", symbol=signal.symbol)
             return "rejected"
 
         # Compute realized PnL
@@ -127,7 +149,15 @@ async def execute_paper_trade(
         current_balance = Decimal(str(paper_session.current_balance))
         proceeds = fill_price * sell_qty
         paper_session.current_balance = float(current_balance + proceeds)
-
+        logger.info(
+            "paper_trade_filled",
+            action="SELL",
+            symbol=signal.symbol,
+            quantity=str(sell_qty),
+            fill_price=str(fill_price),
+            realized_pnl=str(realized_pnl),
+            balance_after=str(paper_session.current_balance),
+        )
         return "filled"
 
     return "rejected"

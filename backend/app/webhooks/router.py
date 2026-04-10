@@ -3,6 +3,7 @@ import secrets
 import time
 import uuid
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,8 @@ from app.auth.deps import get_current_user, get_session, get_tenant_session
 from app.config import settings
 from app.db.models import Strategy, User, WebhookSignal
 from app.webhooks.executor import SignalResult, execute
+
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Public router – webhook ingestion (token-based auth, no JWT)
@@ -98,18 +101,29 @@ async def receive_webhook(
 
     body = await request.body()
     if len(body) > settings.max_webhook_payload_bytes:
+        logger.warning("webhook_payload_too_large", bytes=len(body), tenant_id=str(user.id))
         raise HTTPException(status_code=413, detail="Payload too large")
     try:
         payload: dict = json.loads(body)
     except json.JSONDecodeError:
+        logger.warning("webhook_invalid_json", tenant_id=str(user.id))
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
     redis = request.app.state.redis
     arq_redis = request.app.state.arq_redis
     strategies = await _get_active_strategies(redis, session, user.id)
 
+    logger.info(
+        "webhook_received",
+        tenant_id=str(user.id),
+        strategy_count=len(strategies),
+        payload_keys=list(payload.keys()),
+    )
+
     results = await execute(strategies, payload, redis, session, arq_redis, tenant_id=user.id)
     await _write_signal_logs(session, results, user.id, payload, start_time)
 
+    _log_dispatch_results(results, str(user.id))
     return {"received": True, "signals_processed": len(results)}
 
 
@@ -125,10 +139,12 @@ async def receive_webhook_targeted(
 
     body = await request.body()
     if len(body) > settings.max_webhook_payload_bytes:
+        logger.warning("webhook_payload_too_large", bytes=len(body), tenant_id=str(user.id), slug=slug)
         raise HTTPException(status_code=413, detail="Payload too large")
     try:
         payload: dict = json.loads(body)
     except json.JSONDecodeError:
+        logger.warning("webhook_invalid_json", tenant_id=str(user.id), slug=slug)
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     # Resolve single strategy by slug
@@ -141,6 +157,7 @@ async def receive_webhook_targeted(
     )
     strategy = result.scalar_one_or_none()
     if not strategy:
+        logger.warning("webhook_strategy_not_found", tenant_id=str(user.id), slug=slug)
         raise HTTPException(status_code=404, detail="Strategy not found")
 
     strategy_dict = {
@@ -152,13 +169,47 @@ async def receive_webhook_targeted(
         "name": strategy.name,
     }
 
+    logger.info(
+        "webhook_received",
+        tenant_id=str(user.id),
+        strategy=strategy.name,
+        slug=slug,
+        payload_keys=list(payload.keys()),
+    )
+
     redis = request.app.state.redis
     arq_redis = request.app.state.arq_redis
 
     results = await execute([strategy_dict], payload, redis, session, arq_redis, tenant_id=user.id)
     await _write_signal_logs(session, results, user.id, payload, start_time)
 
+    _log_dispatch_results(results, str(user.id))
     return {"received": True, "signals_processed": len(results)}
+
+
+def _log_dispatch_results(results: list[SignalResult], tenant_id: str) -> None:
+    for r in results:
+        if r.rule_result in ("passed",):
+            logger.info(
+                "signal_dispatched",
+                tenant_id=tenant_id,
+                strategy_id=r.strategy_id,
+                execution_result=r.execution_result,
+            )
+        elif r.rule_result == "blocked_by_rule":
+            logger.info(
+                "signal_blocked",
+                tenant_id=tenant_id,
+                strategy_id=r.strategy_id,
+                reason=r.rule_detail,
+            )
+        else:
+            logger.info(
+                "signal_skipped",
+                tenant_id=tenant_id,
+                strategy_id=r.strategy_id,
+                rule_result=r.rule_result,
+            )
 
 
 # ---------------------------------------------------------------------------

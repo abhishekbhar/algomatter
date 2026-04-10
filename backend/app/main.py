@@ -1,11 +1,48 @@
+import logging
+import logging.config
 from contextlib import asynccontextmanager
 
+import structlog
 from arq.connections import RedisSettings, create_pool
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 from sqlalchemy import text
+
+from app.context import trace_id_var
+
+
+def _inject_trace_id(logger, method, event_dict):  # noqa: ARG001
+    tid = trace_id_var.get("")
+    if tid:
+        event_dict["trace_id"] = tid
+    return event_dict
+
+
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "default": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout"},
+    },
+    "root": {"handlers": ["default"], "level": "INFO"},
+})
+
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        _inject_trace_id,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.ExceptionRenderer(),
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=True,
+)
 
 from app.analytics.router import router as analytics_router
 from app.auth.router import router as auth_router

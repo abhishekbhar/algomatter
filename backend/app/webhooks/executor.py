@@ -7,16 +7,17 @@ execute_live_order_task()  — ARQ background task for live broker orders
 from __future__ import annotations
 
 import asyncio
-import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.factory import get_broker
+from app.context import trace_id_var
 from app.crypto.encryption import decrypt_credentials
 from app.db.models import BrokerConnection, PaperTradingSession, Strategy, WebhookSignal
 from app.db.session import async_session_factory
@@ -30,7 +31,7 @@ from app.webhooks.processor import (
 )
 from app.webhooks.schemas import StandardSignal
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -111,6 +112,12 @@ async def execute(
         try:
             signal = apply_mapping(payload, strategy["mapping_template"])
         except Exception as exc:
+            logger.warning(
+                "signal_mapping_error",
+                strategy_id=strategy["id"],
+                strategy=strategy.get("name"),
+                error=str(exc),
+            )
             results.append(SignalResult(
                 strategy_id=strategy["id"],
                 rule_result="mapping_error",
@@ -130,6 +137,14 @@ async def execute(
         )
 
         if not rule_out.passed:
+            logger.info(
+                "signal_rule_blocked",
+                strategy_id=strategy["id"],
+                strategy=strategy.get("name"),
+                reason=rule_out.reason,
+                symbol=signal.symbol,
+                action=signal.action,
+            )
             results.append(SignalResult(
                 strategy_id=strategy["id"],
                 rule_result="blocked_by_rule",
@@ -181,25 +196,35 @@ async def execute(
                 continue
 
             signal_id = uuid.uuid4()
+            job_id = f"live-order:{signal_id}"
             job_payload = {
                 "strategy_id": strategy["id"],
                 "broker_connection_id": strategy["broker_connection_id"],
                 "tenant_id": str(tenant_id),
                 "signal": signal.model_dump(mode="json"),
                 "webhook_signal_id": str(signal_id),
+                "trace_id": trace_id_var.get(""),
             }
             await arq_redis.enqueue_job(
                 "execute_live_order_task",
                 job_payload,
-                _job_id=f"live-order:{signal_id}",
+                _job_id=job_id,
             )
             await increment_signals_today(redis, strategy["id"])
+            logger.info(
+                "live_order_queued",
+                strategy_id=strategy["id"],
+                strategy=strategy.get("name"),
+                job_id=job_id,
+                symbol=signal.symbol,
+                action=signal.action,
+            )
             results.append(SignalResult(
                 strategy_id=strategy["id"],
                 rule_result="passed",
                 parsed_signal=signal.model_dump(mode="json"),
                 execution_result="queued",
-                execution_detail={"job_id": f"live-order:{signal_id}"},
+                execution_detail={"job_id": job_id},
             ))
 
         else:
@@ -240,6 +265,15 @@ async def execute(
 
 async def execute_live_order_task(ctx: dict, job_payload: dict) -> dict:
     """ARQ task: place a live broker order and update the WebhookSignal log."""
+    # Restore trace_id from the originating HTTP request for end-to-end correlation
+    _token = trace_id_var.set(job_payload.get("trace_id", ""))
+    try:
+        return await _execute_live_order(ctx, job_payload)
+    finally:
+        trace_id_var.reset(_token)
+
+
+async def _execute_live_order(ctx: dict, job_payload: dict) -> dict:
     strategy_id = job_payload["strategy_id"]
     broker_connection_id = job_payload["broker_connection_id"]
     tenant_id = uuid.UUID(job_payload["tenant_id"])
@@ -251,6 +285,15 @@ async def execute_live_order_task(ctx: dict, job_payload: dict) -> dict:
         for k, v in signal_data.items()
     })
 
+    logger.info(
+        "live_order_task_start",
+        strategy_id=strategy_id,
+        webhook_signal_id=str(webhook_signal_id),
+        symbol=signal.symbol,
+        action=signal.action,
+        order_type=signal.order_type,
+    )
+
     async with async_session_factory() as session:
         # Fetch broker connection
         bc_result = await session.execute(
@@ -261,6 +304,7 @@ async def execute_live_order_task(ctx: dict, job_payload: dict) -> dict:
         )
         bc = bc_result.scalar_one_or_none()
         if not bc:
+            logger.error("live_order_broker_not_found", broker_connection_id=broker_connection_id)
             return {"error": "broker_connection_not_found"}
 
         execution_result = "broker_error"
@@ -290,9 +334,24 @@ async def execute_live_order_task(ctx: dict, job_payload: dict) -> dict:
             order_response = await broker.place_order(order_req)
             execution_result = order_response.status
             execution_detail = order_response.model_dump(mode="json")
+            logger.info(
+                "live_order_placed",
+                strategy_id=strategy_id,
+                symbol=signal.symbol,
+                action=signal.action,
+                execution_result=execution_result,
+                broker_order_id=execution_detail.get("order_id"),
+            )
         except Exception as exc:
             execution_result = "broker_error"
             execution_detail = {"error": str(exc)}
+            logger.error(
+                "live_order_broker_error",
+                strategy_id=strategy_id,
+                symbol=signal.symbol,
+                action=signal.action,
+                error=str(exc),
+            )
         finally:
             if broker is not None:
                 await broker.close()
@@ -368,6 +427,7 @@ async def recover_queued_signals(ctx: dict) -> None:
             "tenant_id": str(ws.tenant_id),
             "signal": ws.parsed_signal,
             "webhook_signal_id": str(ws.id),
+            "trace_id": f"recovery:{str(ws.id)[:8]}",
         }
         job_id = f"live-order:{ws.id}"
         await arq_redis.enqueue_job(
