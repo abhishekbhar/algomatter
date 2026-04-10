@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -94,7 +94,7 @@ function computeMapping(
   return template;
 }
 
-export function WebhookParameterBuilder({ onChange, webhookUrl }: Props) {
+export function WebhookParameterBuilder({ value, onChange, webhookUrl }: Props) {
   const [mode, setMode] = useState<"futures" | "spot">("futures");
   const [futuresRows, setFuturesRows] = useState<BuilderRows>(DEFAULT_FUTURES_ROWS);
   const [spotRows, setSpotRows] = useState<BuilderRows>(DEFAULT_SPOT_ROWS);
@@ -103,6 +103,59 @@ export function WebhookParameterBuilder({ onChange, webhookUrl }: Props) {
   );
   const [spotOptional, setSpotOptional] = useState<BuilderRows>(DEFAULT_SPOT_OPTIONAL);
   const [showOptional, setShowOptional] = useState(false);
+
+  // Populate internal state from the saved mapping template (edit mode).
+  // Only runs once when a non-null value first arrives.
+  const initializedRef = useRef(false);
+  useEffect(() => {
+    if (!value || initializedRef.current) return;
+    initializedRef.current = true;
+
+    function parseRow(v: unknown): RowState {
+      if (typeof v === "string" && v.startsWith("$.")) {
+        return { source: "signal", fixedValue: null, signalField: v.slice(2) };
+      }
+      return { source: "fixed", fixedValue: v as string | number | null, signalField: "" };
+    }
+
+    const productType = value.product_type as string | undefined;
+    const newMode: "futures" | "spot" = productType === "FUTURES" ? "futures" : "spot";
+    setMode(newMode);
+
+    const requiredKeys = newMode === "futures"
+      ? Object.keys(DEFAULT_FUTURES_ROWS)
+      : Object.keys(DEFAULT_SPOT_ROWS);
+    const optionalKeysList = newMode === "futures"
+      ? ["price", "position_side", "take_profit", "stop_loss"]
+      : ["price"];
+
+    const newRows: BuilderRows = newMode === "futures"
+      ? { ...DEFAULT_FUTURES_ROWS }
+      : { ...DEFAULT_SPOT_ROWS };
+    for (const key of requiredKeys) {
+      if (key in value) newRows[key] = parseRow(value[key]);
+    }
+
+    const newOptional: BuilderRows = newMode === "futures"
+      ? { ...DEFAULT_FUTURES_OPTIONAL }
+      : { ...DEFAULT_SPOT_OPTIONAL };
+    let hasOptional = false;
+    for (const key of optionalKeysList) {
+      if (key in value) {
+        newOptional[key] = parseRow(value[key]);
+        hasOptional = true;
+      }
+    }
+
+    if (newMode === "futures") {
+      setFuturesRows(newRows);
+      setFuturesOptional(newOptional);
+    } else {
+      setSpotRows(newRows);
+      setSpotOptional(newOptional);
+    }
+    if (hasOptional) setShowOptional(true);
+  }, [value]);
 
   const rows = mode === "futures" ? futuresRows : spotRows;
   const setRows = mode === "futures" ? setFuturesRows : setSpotRows;

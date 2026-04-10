@@ -1,12 +1,14 @@
 "use client";
 import {
-  Box, SimpleGrid, Stat, StatLabel, StatNumber, Skeleton,
+  Box, SimpleGrid, Stat, StatLabel, StatNumber, Skeleton, Text,
   useColorModeValue,
 } from "@chakra-ui/react";
 import { useBrokerStats, useBrokerBalance } from "@/lib/hooks/useApi";
+import { getBrokerCaps } from "@/components/trade/BrokerCapabilities";
 
 interface Props {
   brokerId: string;
+  brokerType?: string;
 }
 
 function formatPnl(pnl: number): string {
@@ -14,13 +16,15 @@ function formatPnl(pnl: number): string {
   return `${sign}₹${Math.abs(pnl).toFixed(2)}`;
 }
 
-function formatAmount(n: number): string {
-  return `₹${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+function formatAmount(symbol: string, n: number, currency: string): string {
+  return `${symbol}${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`;
 }
 
-export function BrokerStatsBar({ brokerId }: Props) {
+export function BrokerStatsBar({ brokerId, brokerType }: Props) {
   const { data: stats, isLoading: statsLoading } = useBrokerStats(brokerId);
-  const { data: balance } = useBrokerBalance(brokerId, "cfd");
+  const { data: futuresBalance } = useBrokerBalance(brokerId, "FUTURES");
+  const { data: spotBalance } = useBrokerBalance(brokerId, "SPOT");
+  const caps = brokerType ? getBrokerCaps(brokerType) : null;
   const cardBg = useColorModeValue("white", "gray.800");
   const borderColor = useColorModeValue("gray.200", "gray.700");
   const pnlColor = stats && stats.total_realized_pnl >= 0 ? "green.400" : "red.400";
@@ -35,9 +39,14 @@ export function BrokerStatsBar({ brokerId }: Props) {
     );
   }
 
+  const futuresSym = caps?.futuresCurrencySymbol ?? "";
+  const futuresCur = caps?.futuresCurrency ?? "USDT";
+  const spotSym = caps?.currencySymbol ?? "";
+  const spotCur = caps?.currency ?? "USDT";
+
   return (
     <Box mb={6}>
-      <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={balance ? 4 : 0}>
+      <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={4}>
         <Stat bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
           <StatLabel>Active Deployments</StatLabel>
           <StatNumber>{stats?.active_deployments ?? "—"}</StatNumber>
@@ -56,22 +65,49 @@ export function BrokerStatsBar({ brokerId }: Props) {
         </Stat>
       </SimpleGrid>
 
-      {balance && (
-        <SimpleGrid columns={3} spacing={4}>
-          <Stat bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
-            <StatLabel>Available Balance</StatLabel>
-            <StatNumber fontSize="md">{formatAmount(balance.available)}</StatNumber>
-          </Stat>
-          <Stat bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
-            <StatLabel>Used Margin</StatLabel>
-            <StatNumber fontSize="md" color="orange.400">{formatAmount(balance.used_margin)}</StatNumber>
-          </Stat>
-          <Stat bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
-            <StatLabel>Total Balance</StatLabel>
-            <StatNumber fontSize="md">{formatAmount(balance.total)}</StatNumber>
-          </Stat>
-        </SimpleGrid>
-      )}
+      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+        {/* Futures (CFD) account */}
+        <Box bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
+          <Text fontSize="xs" fontWeight="semibold" color="yellow.400" textTransform="uppercase" mb={3}>
+            Futures Account
+          </Text>
+          <SimpleGrid columns={3} spacing={3}>
+            <Stat>
+              <StatLabel fontSize="xs">Available Margin</StatLabel>
+              <StatNumber fontSize="sm">{futuresBalance !== undefined ? formatAmount(futuresSym, futuresBalance.available, futuresCur) : "—"}</StatNumber>
+            </Stat>
+            <Stat>
+              <StatLabel fontSize="xs">Used Margin</StatLabel>
+              <StatNumber fontSize="sm" color="orange.400">{futuresBalance !== undefined ? formatAmount(futuresSym, futuresBalance.used_margin, futuresCur) : "—"}</StatNumber>
+            </Stat>
+            <Stat>
+              <StatLabel fontSize="xs">Total</StatLabel>
+              <StatNumber fontSize="sm">{futuresBalance !== undefined ? formatAmount(futuresSym, futuresBalance.total, futuresCur) : "—"}</StatNumber>
+            </Stat>
+          </SimpleGrid>
+        </Box>
+
+        {/* Spot / Asset account */}
+        <Box bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
+          <Text fontSize="xs" fontWeight="semibold" color="green.400" textTransform="uppercase" mb={3}>
+            Spot Account
+          </Text>
+          <SimpleGrid columns={3} spacing={3}>
+            <Stat>
+              <StatLabel fontSize="xs">Available</StatLabel>
+              <StatNumber fontSize="sm">{spotBalance !== undefined ? formatAmount(spotSym, spotBalance.available, spotCur) : "—"}</StatNumber>
+            </Stat>
+            <Stat>
+              <StatLabel fontSize="xs">On Hold</StatLabel>
+              <StatNumber fontSize="sm" color="orange.400">{spotBalance !== undefined ? formatAmount(spotSym, spotBalance.used_margin, spotCur) : "—"}</StatNumber>
+            </Stat>
+            <Stat>
+              <StatLabel fontSize="xs">Total</StatLabel>
+              <StatNumber fontSize="sm">{spotBalance !== undefined ? formatAmount(spotSym, spotBalance.total, spotCur) : "—"}</StatNumber>
+            </Stat>
+          </SimpleGrid>
+        </Box>
+      </SimpleGrid>
     </Box>
   );
 }

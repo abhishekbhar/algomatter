@@ -44,7 +44,7 @@ export default function BrokerDetailPage() {
         )}
       </Flex>
 
-      <BrokerStatsBar brokerId={id} />
+      <BrokerStatsBar brokerId={id} brokerType={broker?.broker_type} />
 
       <Tabs colorScheme="blue" isLazy>
         <TabList>

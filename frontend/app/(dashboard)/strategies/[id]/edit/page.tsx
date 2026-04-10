@@ -170,7 +170,11 @@ export default function EditStrategyPage() {
             <WebhookParameterBuilder
               value={form.mapping_template_obj}
               onChange={handleMappingChange}
-              webhookUrl={webhookConfig?.webhook_url}
+              webhookUrl={
+                webhookConfig?.webhook_url && strategy?.slug
+                  ? `${webhookConfig.webhook_url}/${strategy.slug}`
+                  : webhookConfig?.webhook_url
+              }
             />
           </Box>
 

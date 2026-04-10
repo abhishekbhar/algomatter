@@ -124,7 +124,8 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
   const submitLabel = productType === "FUTURES"
     ? `${actionLabel} ${symbol}${tradeMode === "open" && leverage > 1 ? ` ${leverage}x` : ""}`
     : `${actionLabel} ${symbol}`;
-  const balancePrefix = caps?.currencySymbol || "";
+  const balancePrefix = productType === "FUTURES" ? (caps?.futuresCurrencySymbol ?? "") : (caps?.currencySymbol ?? "");
+  const balanceCurrency = productType === "FUTURES" ? (caps?.futuresCurrency ?? "USDT") : (caps?.currency ?? "USDT");
 
   return (
     <Box w="280px" bg={bg} borderLeft="1px" borderColor={borderColor} overflowY="auto" flexShrink={0} p={3}>
@@ -144,7 +145,7 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
       {brokerQuote && (
         <Flex justify="space-between" mb={3} px={1} fontSize="xs">
           <Text color="gray.500">Broker Price</Text>
-          <Text fontWeight="semibold">{balancePrefix}{brokerQuote.last_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text>
+          <Text fontWeight="semibold">{balancePrefix}{brokerQuote.last_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balanceCurrency}</Text>
         </Flex>
       )}
 
@@ -218,18 +219,18 @@ export function OrderForm({ symbol, currentPrice, onOrderPlaced }: Props) {
 
       {productType === "FUTURES" && effectiveCurrentPrice && quantity ? (
         <Box borderTop="1px" borderColor={borderColor} py={2} mb={2} fontSize="xs">
-          <Flex justify="space-between"><Text color="gray.500">Required Margin</Text><Text color="yellow.400">{balancePrefix}{((parseFloat(quantity) * (caps?.futuresContractSize ?? 1) * (parseFloat(price) || effectiveCurrentPrice)) / leverage).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text></Flex>
+          <Flex justify="space-between"><Text color="gray.500">Required Margin</Text><Text color="yellow.400">{balancePrefix}{((parseFloat(quantity) * (caps?.futuresContractSize ?? 1) * (parseFloat(price) || effectiveCurrentPrice)) / leverage).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balanceCurrency}</Text></Flex>
         </Box>
       ) : null}
 
       {effectiveCurrentPrice && quantity ? (
         <Flex justify="space-between" borderTop="1px" borderColor={borderColor} py={2} mb={3} fontSize="xs">
-          <Text color="gray.500">Total</Text><Text fontWeight="semibold">{balancePrefix}{(parseFloat(quantity) * (productType === "FUTURES" ? (caps?.futuresContractSize ?? 1) : 1) * (parseFloat(price) || effectiveCurrentPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {caps?.currency ?? "USDT"}</Text>
+          <Text color="gray.500">Total</Text><Text fontWeight="semibold">{balancePrefix}{(parseFloat(quantity) * (productType === "FUTURES" ? (caps?.futuresContractSize ?? 1) : 1) * (parseFloat(price) || effectiveCurrentPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balanceCurrency}</Text>
         </Flex>
       ) : null}
 
       <Button w="100%" colorScheme={action === "BUY" ? "green" : "red"} onClick={handleSubmit} isLoading={loading} isDisabled={!selectedBrokerId || !quantity}>{submitLabel}</Button>
-      {balance && (<Text textAlign="center" mt={2} fontSize="xs" color="gray.500">Available: {balancePrefix}{balance.available.toLocaleString()} {caps?.currency ?? "USDT"}</Text>)}
+      {balance && (<Text textAlign="center" mt={2} fontSize="xs" color="gray.500">Available: {balancePrefix}{balance.available.toLocaleString()} {balanceCurrency}</Text>)}
     </Box>
   );
 }

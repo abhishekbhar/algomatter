@@ -45,6 +45,14 @@ export default function NewStrategyPage() {
     []
   );
 
+  // Mirror the server-side slug generation so we can show a preview URL while typing.
+  const previewSlug = form.name
+    ? form.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "strategy"
+    : null;
+  const webhookUrl = previewSlug && webhookConfig?.webhook_url
+    ? `${webhookConfig.webhook_url}/${previewSlug}`
+    : webhookConfig?.webhook_url;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     // Guard: LIMIT order type requires price
@@ -142,7 +150,7 @@ export default function NewStrategyPage() {
             <WebhookParameterBuilder
               value={form.mapping_template_obj}
               onChange={handleMappingChange}
-              webhookUrl={webhookConfig?.webhook_url}
+              webhookUrl={webhookUrl}
             />
           </Box>
 

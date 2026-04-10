@@ -578,10 +578,22 @@ class Exchange1Broker(BrokerAdapter):
         accounts = await self._get_balance_data()
 
         if product_type == "FUTURES":
+            # Exchange1 Global: futures margin is USDT in the cfd account.
+            # Exchange1 India: futures margin is INR in the asset account (cfd is unfunded).
+            # Try cfd with a non-zero balance first; fall back to asset INR.
             for acc in accounts:
                 if acc.get("account_type") == "cfd":
+                    avail = Decimal(str(acc.get("available_margin", "0")))
+                    if avail > 0:
+                        return AccountBalance(
+                            available=avail,
+                            used_margin=Decimal(str(acc.get("hold", "0"))),
+                            total=Decimal(str(acc.get("total", "0"))),
+                        )
+            for acc in accounts:
+                if acc.get("account_type") == "asset":
                     return AccountBalance(
-                        available=Decimal(str(acc.get("available_margin", "0"))),
+                        available=Decimal(str(acc.get("available", "0"))),
                         used_margin=Decimal(str(acc.get("hold", "0"))),
                         total=Decimal(str(acc.get("total", "0"))),
                     )
