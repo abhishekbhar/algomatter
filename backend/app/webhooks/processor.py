@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from decimal import Decimal
-from datetime import date, datetime, timedelta, time
+from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
+
+_IST = ZoneInfo("Asia/Kolkata")
 from app.webhooks.schemas import StandardSignal
 
 
@@ -67,7 +69,7 @@ async def get_strategy_counts(redis, strategy_id: str) -> tuple[int, int]:
     Falls back to (0, 0) if Redis is unavailable.
     """
     try:
-        today = date.today().strftime("%Y-%m-%d")
+        today = datetime.now(_IST).strftime("%Y-%m-%d")
         positions_key = f"wh:positions:{strategy_id}"
         signals_key = f"wh:signals:{strategy_id}:{today}"
         positions, signals = await redis.mget(positions_key, signals_key)
@@ -79,17 +81,16 @@ async def get_strategy_counts(redis, strategy_id: str) -> tuple[int, int]:
 async def increment_signals_today(redis, strategy_id: str) -> None:
     """Increment signals_today counter; auto-expires at midnight IST."""
     try:
-        today = date.today().strftime("%Y-%m-%d")
+        now = datetime.now(_IST)
+        today = now.strftime("%Y-%m-%d")
         signals_key = f"wh:signals:{strategy_id}:{today}"
         await redis.incr(signals_key)
 
         # Set TTL to end of day in IST
-        tz = ZoneInfo("Asia/Kolkata")
-        now = datetime.now(tz)
         midnight = datetime.combine(
             now.date() + timedelta(days=1),
             time.min,
-            tzinfo=tz,
+            tzinfo=_IST,
         )
         await redis.expireat(signals_key, int(midnight.timestamp()))
     except Exception:

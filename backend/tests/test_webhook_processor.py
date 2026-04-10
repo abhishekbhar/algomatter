@@ -1,6 +1,7 @@
 # backend/tests/test_webhook_processor.py
 import pytest
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from unittest.mock import AsyncMock
 
 from app.webhooks.processor import (
@@ -42,7 +43,9 @@ async def test_increment_signals_today_sets_ttl():
     redis = AsyncMock()
     redis.incr.return_value = 1
     await increment_signals_today(redis, "strat-123")
-    redis.incr.assert_called_once()
+
+    expected_key = f"wh:signals:strat-123:{datetime.now(ZoneInfo('Asia/Kolkata')).strftime('%Y-%m-%d')}"
+    redis.incr.assert_called_once_with(expected_key)
     redis.expireat.assert_called_once()
 
 
@@ -67,3 +70,18 @@ async def test_update_position_count_sell_does_not_go_below_zero():
     redis.get.return_value = b"0"
     await update_position_count(redis, "strat-123", action="SELL")
     redis.decr.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_position_count_buy_lowercase_increments():
+    redis = AsyncMock()
+    await update_position_count(redis, "strat-123", action="buy")
+    redis.incr.assert_called_once_with("wh:positions:strat-123")
+
+
+@pytest.mark.asyncio
+async def test_increment_signals_today_redis_failure_does_not_raise():
+    redis = AsyncMock()
+    redis.incr.side_effect = Exception("Redis down")
+    # Should not raise
+    await increment_signals_today(redis, "strat-123")
