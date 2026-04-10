@@ -13,7 +13,7 @@ import csv
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,13 +44,7 @@ async def strategy_metrics(
     session: AsyncSession = Depends(get_tenant_session),
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
-    metrics = await get_strategy_metrics(session, strategy_id, tenant_id)
-    if metrics is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No metrics found for this strategy",
-        )
-    return metrics
+    return await get_strategy_metrics(session, strategy_id, tenant_id)
 
 
 @router.get("/strategies/{strategy_id}/equity-curve")

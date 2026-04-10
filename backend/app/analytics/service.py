@@ -125,7 +125,15 @@ async def get_strategy_metrics(
         session, strategy_id, tenant_id
     )
     if not trades:
-        return None
+        return {
+            "total_return": 0.0,
+            "win_rate": 0.0,
+            "profit_factor": 0.0,
+            "sharpe_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "total_trades": 0,
+            "avg_trade_pnl": 0.0,
+        }
     return compute_metrics(trades, equity_curve, initial_capital)
 
 
