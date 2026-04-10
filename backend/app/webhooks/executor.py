@@ -97,6 +97,10 @@ async def execute(
     # Phase 1: map, evaluate rules, enqueue live jobs
     for strategy in strategies:
         if not strategy.get("mapping_template"):
+            results.append(SignalResult(
+                strategy_id=strategy["id"],
+                rule_result="no_mapping_template",
+            ))
             continue
 
         # --- Mapping ---
@@ -141,7 +145,7 @@ async def execute(
                 rule_result="passed",
                 parsed_signal=signal.model_dump(mode="json"),
             ))
-            t = asyncio.ensure_future(
+            t = asyncio.create_task(
                 _execute_paper(
                     session,
                     strategy,
@@ -160,6 +164,15 @@ async def execute(
                     rule_result="passed",
                     parsed_signal=signal.model_dump(mode="json"),
                     execution_result="no_broker_connection",
+                ))
+                continue
+
+            if tenant_id is None:
+                results.append(SignalResult(
+                    strategy_id=strategy["id"],
+                    rule_result="passed",
+                    parsed_signal=signal.model_dump(mode="json"),
+                    execution_result="no_tenant_id",
                 ))
                 continue
 
@@ -246,13 +259,14 @@ async def execute_live_order_task(ctx: dict, job_payload: dict) -> dict:
         if not bc:
             return {"error": "broker_connection_not_found"}
 
-        creds = decrypt_credentials(tenant_id, bc.credentials)
-        broker = await get_broker(bc.broker_type, creds)
-
         execution_result = "broker_error"
         execution_detail: dict = {}
+        broker = None
 
         try:
+            creds = decrypt_credentials(tenant_id, bc.credentials)
+            broker = await get_broker(bc.broker_type, creds)
+
             from app.brokers.base import OrderRequest as BrokerOrderRequest
             order_req = BrokerOrderRequest(
                 symbol=signal.symbol,
@@ -276,7 +290,8 @@ async def execute_live_order_task(ctx: dict, job_payload: dict) -> dict:
             execution_result = "broker_error"
             execution_detail = {"error": str(exc)}
         finally:
-            await broker.close()
+            if broker is not None:
+                await broker.close()
 
         # Update WebhookSignal log record
         ws_result = await session.execute(

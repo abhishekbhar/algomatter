@@ -41,7 +41,6 @@ def _make_payload():
 async def test_execute_mapping_error_logs_signal():
     strategy = _make_strategy(mapping_template={"symbol": "$.missing_field", "exchange": "NSE", "action": "$.action", "quantity": "$.qty", "order_type": "MARKET", "product_type": "INTRADAY"})
     redis = AsyncMock()
-    redis.mget.return_value = [None, None]
     session = AsyncMock()
     session.add = MagicMock()
     session.commit = AsyncMock()
@@ -86,6 +85,8 @@ async def test_execute_paper_mode_calls_paper_engine():
             results = await execute([strategy], _make_payload(), redis, session, arq_redis)
 
     assert results[0].execution_result == "filled"
+    # Verify Redis counters were updated for filled paper trade
+    assert redis.incr.call_count >= 1
 
 
 @pytest.mark.asyncio
