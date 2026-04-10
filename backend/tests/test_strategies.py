@@ -216,6 +216,7 @@ async def test_rename_strategy_regenerates_slug(client):
         json={"name": "New Name"},
         headers=headers,
     )
+    assert update.status_code == 200
     assert update.json()["slug"] == "new-name"
 
 
@@ -234,4 +235,5 @@ async def test_slug_collision_resolved(client):
         json={"name": "NIFTY Long", "mode": "paper", "mapping_template": None, "rules": {}},
         headers=headers,
     )
+    assert resp2.status_code == 201
     assert resp2.json()["slug"] == "nifty-long-2"

@@ -19,7 +19,7 @@ def generate_slug(name: str) -> str:
     slug = name.lower()
     slug = re.sub(r"[^a-z0-9]+", "-", slug)
     slug = slug.strip("-")
-    return slug
+    return slug or "strategy"
 
 
 async def ensure_unique_slug(
@@ -37,7 +37,10 @@ async def ensure_unique_slug(
             slug_col.like(f"{base_slug}%"),
         )
     )
-    existing = set(result.scalars().all())
+    all_matches = result.scalars().all()
+    # Only consider exact matches or numbered variants (e.g. nifty-long-2), not prefix accidents
+    pattern = re.compile(rf"^{re.escape(base_slug)}(-\d+)?$")
+    existing = {s for s in all_matches if pattern.match(s)}
 
     if base_slug not in existing:
         return base_slug
