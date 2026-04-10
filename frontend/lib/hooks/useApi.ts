@@ -234,24 +234,16 @@ export function useDeploymentResults(id: string | undefined) {
 }
 
 export function useActiveDeployments() {
-  const { data: runningLive, ...runningRest } = useApiGet<Deployment[]>(
-    "/api/v1/deployments?status=running&mode=live",
-    { refreshInterval: 2000 }
+  const result = useApiGet<Deployment[]>("/api/v1/deployments", {
+    refreshInterval: 5000,
+  });
+  const active = (result.data ?? []).filter(
+    (d) => d.status === "running" || d.status === "paused"
   );
-  const { data: runningPaper } = useApiGet<Deployment[]>(
-    "/api/v1/deployments?status=running&mode=paper",
-    { refreshInterval: 2000 }
-  );
-  const { data: pausedLive } = useApiGet<Deployment[]>(
-    "/api/v1/deployments?status=paused&mode=live",
-    { refreshInterval: 2000 }
-  );
-  const { data: pausedPaper } = useApiGet<Deployment[]>(
-    "/api/v1/deployments?status=paused&mode=paper",
-    { refreshInterval: 2000 }
-  );
-  const data = [...(runningLive ?? []), ...(runningPaper ?? []), ...(pausedLive ?? []), ...(pausedPaper ?? [])];
-  return { data: data.length > 0 || runningLive || runningPaper ? data : undefined, ...runningRest };
+  return {
+    ...result,
+    data: result.data !== undefined ? active : undefined,
+  };
 }
 
 export function useDeploymentLogs(id: string | undefined, offset = 0, limit = 50) {
