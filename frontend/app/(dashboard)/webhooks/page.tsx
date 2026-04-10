@@ -194,7 +194,7 @@ export default function WebhooksPage() {
                 <Tbody>
                   {strategies.map((s) => {
                     const stratUrl = config
-                      ? `${window.location.origin}/api/v1/webhook/${config.token}/${s.slug}`
+                      ? `${typeof window !== "undefined" ? window.location.origin : ""}/api/v1/webhook/${config.token}/${s.slug}`
                       : "";
                     return (
                       <StrategyUrlRow key={s.id} strategy={s} url={stratUrl} />
