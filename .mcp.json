@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "gitnexus": {
+      "type": "stdio",
+      "command": "/home/abhishekbhar/projects/algomatter_worktree/algomatter/.gitnexus-local/mcp-server.sh",
+      "args": [],
+      "cwd": "/home/abhishekbhar/projects/algomatter_worktree/algomatter"
+    }
+  }
+}
