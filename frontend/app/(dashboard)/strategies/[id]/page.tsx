@@ -4,9 +4,10 @@ import {
   Badge, useColorModeValue, Spinner, Center,
 } from "@chakra-ui/react";
 import { useRouter, useParams } from "next/navigation";
+import { useMemo } from "react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { DataTable, Column } from "@/components/shared/DataTable";
-import { ChartContainer, filterByTimeframe } from "@/components/charts/ChartContainer";
+import { ChartContainer, filterByTimeframe, Timeframe } from "@/components/charts/ChartContainer";
 import { EquityCurve } from "@/components/charts/EquityCurve";
 import { WebhookTradesTable } from "@/components/strategies/WebhookTradesTable";
 import {
@@ -18,6 +19,11 @@ import {
 } from "@/lib/hooks/useApi";
 import { formatDate } from "@/lib/utils/formatters";
 import type { WebhookSignal, PaperSession, EquityCurvePoint } from "@/lib/api/types";
+
+function EquityCurveWithMemo({ chartData, tf }: { chartData: { time: string; value: number }[]; tf: Timeframe }) {
+  const filtered = useMemo(() => filterByTimeframe(chartData, tf), [chartData, tf]);
+  return <EquityCurve data={filtered} height={300} />;
+}
 
 const signalColumns: Column<WebhookSignal>[] = [
   { key: "received_at", header: "Time", sortable: true, render: (v) => v ? formatDate(String(v)) : "" },
@@ -101,10 +107,13 @@ export default function StrategyDetailPage() {
     );
   }
 
-  const chartData = (equityData ?? []).map((d: EquityCurvePoint) => ({
-    time: d.timestamp.split("T")[0],
-    value: d.equity,
-  }));
+  const chartData = useMemo(
+    () => (equityData ?? []).map((d: EquityCurvePoint) => ({
+      time: d.timestamp.split("T")[0],
+      value: d.equity,
+    })),
+    [equityData],
+  );
 
   return (
     <Box>
@@ -176,7 +185,7 @@ export default function StrategyDetailPage() {
           <TabPanel px={0}>
             {chartData.length > 0 ? (
               <ChartContainer height={300}>
-                {(tf) => <EquityCurve data={filterByTimeframe(chartData, tf)} height={300} />}
+                {(tf) => <EquityCurveWithMemo chartData={chartData} tf={tf} />}
               </ChartContainer>
             ) : (
               <Text color="gray.500" textAlign="center" py={8}>

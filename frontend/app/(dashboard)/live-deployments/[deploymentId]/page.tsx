@@ -14,7 +14,7 @@ import { ManualOrderModal } from "@/components/live-trading/ManualOrderModal";
 import { MetricsGrid } from "@/components/live-trading/MetricsGrid";
 import { ComparisonTable } from "@/components/live-trading/ComparisonTable";
 import { apiClient } from "@/lib/api/client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { CandlestickChart } from "@/components/charts/CandlestickChart";
 import type { TradeMarker } from "@/lib/api/types";
 
@@ -39,18 +39,21 @@ export default function DeploymentDetailPage() {
   );
   const { data: tradesData } = useDeploymentTrades(deploymentId, 0, 500);
 
-  const tradeMarkers: TradeMarker[] = (tradesData?.trades ?? [])
-    .filter((t) => t.fill_price != null)
-    .map((t) => {
-      const action = t.action.toUpperCase();
-      if (action !== "BUY" && action !== "SELL") return null;
-      return {
-        time: t.filled_at ?? t.created_at,
-        price: t.fill_price!,
-        action: action as "BUY" | "SELL",
-      };
-    })
-    .filter((m): m is TradeMarker => m !== null);
+  const tradeMarkers = useMemo<TradeMarker[]>(
+    () => (tradesData?.trades ?? [])
+      .filter((t) => t.fill_price != null)
+      .map((t) => {
+        const action = t.action.toUpperCase();
+        if (action !== "BUY" && action !== "SELL") return null;
+        return {
+          time: t.filled_at ?? t.created_at,
+          price: t.fill_price!,
+          action: action as "BUY" | "SELL",
+        };
+      })
+      .filter((m): m is TradeMarker => m !== null),
+    [tradesData],
+  );
 
   if (!deployment) return <Box p={6}>Loading...</Box>;
 
