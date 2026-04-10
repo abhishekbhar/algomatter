@@ -20,7 +20,7 @@ async def test_webhook_receives_and_logs_signal(client):
     tokens = await create_authenticated_user(client)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     config = await client.get("/api/v1/webhooks/config", headers=headers)
-    webhook_token = config.json()["webhook_token"]
+    webhook_token = config.json()["token"]
 
     await client.post(
         "/api/v1/strategies",
@@ -60,7 +60,7 @@ async def test_webhook_blocked_by_rule(client):
     tokens = await create_authenticated_user(client)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     config = await client.get("/api/v1/webhooks/config", headers=headers)
-    webhook_token = config.json()["webhook_token"]
+    webhook_token = config.json()["token"]
 
     await client.post(
         "/api/v1/strategies",
@@ -96,7 +96,7 @@ async def test_webhook_payload_too_large(client):
     tokens = await create_authenticated_user(client)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     config = await client.get("/api/v1/webhooks/config", headers=headers)
-    webhook_token = config.json()["webhook_token"]
+    webhook_token = config.json()["token"]
 
     big_payload = {"data": "x" * 70000}
     resp = await client.post(
@@ -110,13 +110,13 @@ async def test_webhook_config_regenerate_token(client):
     tokens = await create_authenticated_user(client)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     config1 = await client.get("/api/v1/webhooks/config", headers=headers)
-    old_token = config1.json()["webhook_token"]
+    old_token = config1.json()["token"]
 
     await client.post(
         "/api/v1/webhooks/config/regenerate-token", headers=headers
     )
     config2 = await client.get("/api/v1/webhooks/config", headers=headers)
-    new_token = config2.json()["webhook_token"]
+    new_token = config2.json()["token"]
 
     assert old_token != new_token
     resp = await client.post(
@@ -133,7 +133,7 @@ async def test_webhook_slug_targets_single_strategy(client):
     token = config.json()["token"]
 
     # Create two strategies
-    await client.post(
+    resp1 = await client.post(
         "/api/v1/strategies",
         json={"name": "NIFTY Long", "mode": "log", "mapping_template": {
             "symbol": "$.ticker", "exchange": "NSE", "action": "$.action",
@@ -141,6 +141,9 @@ async def test_webhook_slug_targets_single_strategy(client):
         }, "rules": {}},
         headers=headers,
     )
+    assert resp1.status_code == 201
+    slug = resp1.json()["slug"]
+
     await client.post(
         "/api/v1/strategies",
         json={"name": "NIFTY Short", "mode": "log", "mapping_template": {
@@ -151,7 +154,7 @@ async def test_webhook_slug_targets_single_strategy(client):
     )
 
     resp = await client.post(
-        f"/api/v1/webhook/{token}/nifty-long",
+        f"/api/v1/webhook/{token}/{slug}",
         json={"ticker": "NIFTY", "action": "BUY", "qty": "1"},
     )
     assert resp.status_code == 200

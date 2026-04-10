@@ -48,6 +48,7 @@ async def _get_active_strategies(redis, session: AsyncSession, tenant_id: uuid.U
     payload = [
         {
             "id": str(s.id),
+            "slug": s.slug,
             "mapping_template": s.mapping_template,
             "mode": s.mode,
             "broker_connection_id": str(s.broker_connection_id) if s.broker_connection_id else None,
@@ -92,14 +93,16 @@ async def receive_webhook(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
+    start_time = time.perf_counter()
     user = await _resolve_user(token, session)
 
     body = await request.body()
     if len(body) > settings.max_webhook_payload_bytes:
         raise HTTPException(status_code=413, detail="Payload too large")
-    payload: dict = json.loads(body)
-
-    start_time = time.perf_counter()
+    try:
+        payload: dict = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
     redis = request.app.state.redis
     arq_redis = request.app.state.arq_redis
     strategies = await _get_active_strategies(redis, session, user.id)
@@ -117,12 +120,16 @@ async def receive_webhook_targeted(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
+    start_time = time.perf_counter()
     user = await _resolve_user(token, session)
 
     body = await request.body()
     if len(body) > settings.max_webhook_payload_bytes:
         raise HTTPException(status_code=413, detail="Payload too large")
-    payload: dict = json.loads(body)
+    try:
+        payload: dict = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     # Resolve single strategy by slug
     result = await session.execute(
@@ -145,7 +152,6 @@ async def receive_webhook_targeted(
         "name": strategy.name,
     }
 
-    start_time = time.perf_counter()
     redis = request.app.state.redis
     arq_redis = request.app.state.arq_redis
 
