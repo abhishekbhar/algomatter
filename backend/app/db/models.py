@@ -80,6 +80,9 @@ class BrokerConnection(Base):
 
 class Strategy(Base):
     __tablename__ = "strategies"
+    __table_args__ = (
+        Index("ix_strategies_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -102,6 +105,7 @@ class WebhookSignal(Base):
     __tablename__ = "webhook_signals"
     __table_args__ = (
         Index("ix_webhook_signals_tenant_received", "tenant_id", "received_at"),
+        Index("ix_webhook_signals_strategy_received", "tenant_id", "strategy_id", "received_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -173,6 +177,9 @@ class StrategyResult(Base):
 
 class PaperTradingSession(Base):
     __tablename__ = "paper_trading_sessions"
+    __table_args__ = (
+        Index("ix_paper_trading_sessions_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -197,6 +204,10 @@ class PaperTradingSession(Base):
 
 class PaperPosition(Base):
     __tablename__ = "paper_positions"
+    __table_args__ = (
+        Index("ix_paper_positions_tenant_id", "tenant_id"),
+        Index("ix_paper_positions_session_symbol", "session_id", "symbol"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(
