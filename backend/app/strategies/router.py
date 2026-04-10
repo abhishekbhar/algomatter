@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user, get_tenant_session
 from app.db.models import Strategy, WebhookSignal, StrategyResult, PaperTradingSession, PaperTrade, PaperPosition
+from app.webhooks.slug import generate_slug, ensure_unique_slug
 from app.strategies.schemas import (
     CreateStrategyRequest,
     StrategyResponse,
@@ -27,9 +28,14 @@ async def create_strategy(
     session: AsyncSession = Depends(get_tenant_session),
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
+
+    base_slug = generate_slug(body.name)
+    slug = await ensure_unique_slug(session, tenant_id, base_slug)
+
     strategy = Strategy(
         tenant_id=tenant_id,
         name=body.name,
+        slug=slug,
         broker_connection_id=body.broker_connection_id,
         mode=body.mode,
         mapping_template=body.mapping_template,
@@ -48,6 +54,7 @@ async def create_strategy(
     return StrategyResponse(
         id=strategy.id,
         name=strategy.name,
+        slug=strategy.slug,
         broker_connection_id=strategy.broker_connection_id,
         mode=strategy.mode,
         mapping_template=strategy.mapping_template,
@@ -71,6 +78,7 @@ async def list_strategies(
         StrategyResponse(
             id=s.id,
             name=s.name,
+            slug=s.slug,
             broker_connection_id=s.broker_connection_id,
             mode=s.mode,
             mapping_template=s.mapping_template,
@@ -104,6 +112,7 @@ async def get_strategy(
     return StrategyResponse(
         id=strategy.id,
         name=strategy.name,
+        slug=strategy.slug,
         broker_connection_id=strategy.broker_connection_id,
         mode=strategy.mode,
         mapping_template=strategy.mapping_template,
@@ -136,6 +145,12 @@ async def update_strategy(
         )
 
     update_data = body.model_dump(exclude_unset=True)
+
+    # Regenerate slug if name is changing
+    if "name" in update_data and update_data["name"] != strategy.name:
+        base_slug = generate_slug(update_data["name"])
+        update_data["slug"] = await ensure_unique_slug(session, tenant_id, base_slug)
+
     for field, value in update_data.items():
         setattr(strategy, field, value)
 
@@ -151,6 +166,7 @@ async def update_strategy(
     return StrategyResponse(
         id=strategy.id,
         name=strategy.name,
+        slug=strategy.slug,
         broker_connection_id=strategy.broker_connection_id,
         mode=strategy.mode,
         mapping_template=strategy.mapping_template,

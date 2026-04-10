@@ -179,3 +179,59 @@ async def test_rls_isolation_strategies(client):
     # User B should not be able to delete it
     resp = await client.delete(f"/api/v1/strategies/{strategy_id}", headers=headers_b)
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_strategy_returns_slug(client):
+    tokens = await create_authenticated_user(client, "slugtest@example.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    resp = await client.post(
+        "/api/v1/strategies",
+        json={
+            "name": "NIFTY Momentum",
+            "mode": "paper",
+            "mapping_template": None,
+            "rules": {},
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["slug"] == "nifty-momentum"
+
+
+@pytest.mark.asyncio
+async def test_rename_strategy_regenerates_slug(client):
+    tokens = await create_authenticated_user(client, "slugrename@example.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    create = await client.post(
+        "/api/v1/strategies",
+        json={"name": "Old Name", "mode": "paper", "mapping_template": None, "rules": {}},
+        headers=headers,
+    )
+    strategy_id = create.json()["id"]
+
+    update = await client.put(
+        f"/api/v1/strategies/{strategy_id}",
+        json={"name": "New Name"},
+        headers=headers,
+    )
+    assert update.json()["slug"] == "new-name"
+
+
+@pytest.mark.asyncio
+async def test_slug_collision_resolved(client):
+    tokens = await create_authenticated_user(client, "slugcol@example.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    await client.post(
+        "/api/v1/strategies",
+        json={"name": "NIFTY Long", "mode": "paper", "mapping_template": None, "rules": {}},
+        headers=headers,
+    )
+    resp2 = await client.post(
+        "/api/v1/strategies",
+        json={"name": "NIFTY Long", "mode": "paper", "mapping_template": None, "rules": {}},
+        headers=headers,
+    )
+    assert resp2.json()["slug"] == "nifty-long-2"

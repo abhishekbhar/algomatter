@@ -24,6 +24,7 @@ class UpdateStrategyRequest(BaseModel):
 class StrategyResponse(BaseModel):
     id: uuid.UUID
     name: str
+    slug: str
     broker_connection_id: uuid.UUID | None
     mode: str
     mapping_template: dict | None
