@@ -307,6 +307,5 @@ async def execute_live_order_task(ctx: dict, job_payload: dict) -> dict:
         redis = ctx.get("redis")
         if redis and execution_result in ("filled", "accepted"):
             await update_position_count(redis, strategy_id, signal.action)
-            await increment_signals_today(redis, strategy_id)
 
     return {"execution_result": execution_result}

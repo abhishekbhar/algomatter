@@ -126,6 +126,14 @@ export default function StrategyDetailPage() {
 
   const strategySessions = (sessions ?? []).filter((s) => s.strategy_id === id);
 
+  const chartData = useMemo(
+    () => (equityData ?? []).map((d: EquityCurvePoint) => ({
+      time: d.timestamp.split("T")[0],
+      value: d.equity,
+    })),
+    [equityData],
+  );
+
   if (isLoading) {
     return <Center py={20}><Spinner size="xl" /></Center>;
   }
@@ -138,14 +146,6 @@ export default function StrategyDetailPage() {
       </Box>
     );
   }
-
-  const chartData = useMemo(
-    () => (equityData ?? []).map((d: EquityCurvePoint) => ({
-      time: d.timestamp.split("T")[0],
-      value: d.equity,
-    })),
-    [equityData],
-  );
 
   return (
     <Box>
