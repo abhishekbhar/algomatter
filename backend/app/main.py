@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+from arq.connections import RedisSettings, create_pool
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -31,9 +32,12 @@ redis_pool = Redis.from_url(settings.redis_url, decode_responses=False)
 async def lifespan(app: FastAPI):
     # startup: expose redis pool for other modules
     app.state.redis = redis_pool
+    arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    app.state.arq_redis = arq_pool
     yield
     # shutdown: close redis pool
     await redis_pool.aclose()
+    await arq_pool.aclose()
 
 
 app = FastAPI(title="AlgoMatter", version="0.1.0", lifespan=lifespan)
