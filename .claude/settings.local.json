@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rsync -avz --progress --exclude='node_modules' --exclude='.next' /Users/abhishekbhar/projects/algomatter-worktree/algomatter/frontend/ root@139.59.23.246:/opt/algomatter/frontend/)",
+      "Bash(ssh root@139.59.23.246 \"sed -i ''/\"\"http:\\\\/\\\\/127.0.0.1:5173\"\",/a\\\\        \"\"https://openalgo.abhibhr.in\"\",\\\\n        \"\"http://139.59.23.246\"\",'' /opt/algomatter/backend/app/main.py && grep -A8 ''allow_origins'' /opt/algomatter/backend/app/main.py\")",
+      "Bash(ssh root@139.59.23.246 \"sed -i \"\"s|connect-src ''self'' http://localhost:8000 http://localhost:3000|connect-src ''self'' https://openalgo.abhibhr.in http://139.59.23.246|\"\" /opt/algomatter/frontend/next.config.mjs\")",
+      "Bash(ssh root@139.59.23.246 'cd /opt/algomatter/frontend && NODE_OPTIONS=\"\"--max-old-space-size=512\"\" NEXT_PUBLIC_API_BASE_URL=\"\"\"\" npm run build 2>&1 | tail -5')"
+    ]
+  }
+}
