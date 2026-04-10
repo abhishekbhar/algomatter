@@ -44,7 +44,10 @@ async def client():
         await conn.run_sync(Base.metadata.create_all)
     # Provide a mock redis so endpoints that publish messages work in tests
     mock_redis = AsyncMock()
+    mock_redis.mget.return_value = [None, None]
     app.state.redis = mock_redis
+    mock_arq_redis = AsyncMock()
+    app.state.arq_redis = mock_arq_redis
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

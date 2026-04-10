@@ -2,7 +2,6 @@ import json
 import secrets
 import time
 import uuid
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
@@ -11,8 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user, get_session, get_tenant_session
 from app.config import settings
 from app.db.models import Strategy, User, WebhookSignal
-from app.webhooks.mapper import apply_mapping
-from app.webhooks.processor import evaluate_rules
+from app.webhooks.executor import SignalResult, execute
 
 # ---------------------------------------------------------------------------
 # Public router – webhook ingestion (token-based auth, no JWT)
@@ -22,15 +20,23 @@ webhook_public_router = APIRouter(tags=["webhooks"])
 _STRATEGY_CACHE_TTL = 60  # seconds
 
 
-async def _get_active_strategies(redis, session, tenant_id):
-    """Return active strategies for tenant, using Redis cache (60 s TTL)."""
+async def _resolve_user(token: str, session: AsyncSession) -> User:
+    result = await session.execute(select(User).where(User.webhook_token == token))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    return user
+
+
+async def _get_active_strategies(redis, session: AsyncSession, tenant_id: uuid.UUID) -> list[dict]:
+    """Return all active strategies for tenant, Redis-cached (60 s TTL)."""
     cache_key = f"strategies:active:{tenant_id}"
     try:
         cached = await redis.get(cache_key)
         if cached:
             return json.loads(cached)
     except Exception:
-        pass  # Redis unavailable — fall through to DB query
+        pass
 
     result = await session.execute(
         select(Strategy).where(
@@ -39,7 +45,6 @@ async def _get_active_strategies(redis, session, tenant_id):
         )
     )
     strategies = result.scalars().all()
-
     payload = [
         {
             "id": str(s.id),
@@ -54,8 +59,31 @@ async def _get_active_strategies(redis, session, tenant_id):
     try:
         await redis.set(cache_key, json.dumps(payload), ex=_STRATEGY_CACHE_TTL)
     except Exception:
-        pass  # Redis unavailable — serve from DB without caching
+        pass
     return payload
+
+
+async def _write_signal_logs(
+    session: AsyncSession,
+    results: list[SignalResult],
+    tenant_id: uuid.UUID,
+    raw_payload: dict,
+    start_time: float,
+) -> None:
+    for r in results:
+        ws = WebhookSignal(
+            tenant_id=tenant_id,
+            strategy_id=uuid.UUID(r.strategy_id),
+            raw_payload=raw_payload,
+            parsed_signal=r.parsed_signal,
+            rule_result=r.rule_result,
+            rule_detail=r.rule_detail,
+            execution_result=r.execution_result,
+            execution_detail=r.execution_detail,
+            processing_ms=int((time.perf_counter() - start_time) * 1000),
+        )
+        session.add(ws)
+    await session.commit()
 
 
 @webhook_public_router.post("/api/v1/webhook/{token}")
@@ -64,162 +92,73 @@ async def receive_webhook(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    # 1. Look up user by webhook_token
-    result = await session.execute(
-        select(User).where(User.webhook_token == token)
-    )
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    user = await _resolve_user(token, session)
 
-    # 2. Read and check payload size
     body = await request.body()
     if len(body) > settings.max_webhook_payload_bytes:
         raise HTTPException(status_code=413, detail="Payload too large")
-
     payload: dict = json.loads(body)
 
-    # 3. Record start time
     start_time = time.perf_counter()
-
-    # 4. Fetch all active strategies for this user (Redis-cached, 60 s TTL)
     redis = request.app.state.redis
-    strategy_dicts = await _get_active_strategies(redis, session, user.id)
+    arq_redis = request.app.state.arq_redis
+    strategies = await _get_active_strategies(redis, session, user.id)
 
-    signals_processed = 0
+    results = await execute(strategies, payload, redis, session, arq_redis, tenant_id=user.id)
+    await _write_signal_logs(session, results, user.id, payload, start_time)
 
-    for strategy in strategy_dicts:
-        if not strategy["mapping_template"]:
-            continue
+    return {"received": True, "signals_processed": len(results)}
 
-        parsed_signal = None
-        rule_result_str = None
-        rule_detail = None
-        execution_result = None
-        execution_detail = None
 
-        try:
-            signal = apply_mapping(payload, strategy["mapping_template"])
-            parsed_signal = signal.model_dump(mode="json")
-        except (ValueError, Exception) as exc:
-            rule_result_str = "mapping_error"
-            rule_detail = str(exc)
-            # Log the signal even on mapping error
-            ws = WebhookSignal(
-                tenant_id=user.id,
-                strategy_id=uuid.UUID(strategy["id"]),
-                raw_payload=payload,
-                parsed_signal=None,
-                rule_result=rule_result_str,
-                rule_detail=rule_detail,
-                processing_ms=int(
-                    (time.perf_counter() - start_time) * 1000
-                ),
-            )
-            session.add(ws)
-            signals_processed += 1
-            continue
+@webhook_public_router.post("/api/v1/webhook/{token}/{slug}")
+async def receive_webhook_targeted(
+    token: str,
+    slug: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    user = await _resolve_user(token, session)
 
-        # Evaluate rules (pass 0 for open_positions and signals_today for now)
-        rule_out = evaluate_rules(
-            signal,
-            strategy["rules"] or {},
-            open_positions=0,
-            signals_today=0,
+    body = await request.body()
+    if len(body) > settings.max_webhook_payload_bytes:
+        raise HTTPException(status_code=413, detail="Payload too large")
+    payload: dict = json.loads(body)
+
+    # Resolve single strategy by slug
+    result = await session.execute(
+        select(Strategy).where(
+            Strategy.tenant_id == user.id,
+            Strategy.slug == slug,
+            Strategy.is_active.is_(True),
         )
+    )
+    strategy = result.scalar_one_or_none()
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
 
-        if rule_out.passed:
-            rule_result_str = "passed"
-            if strategy["mode"] == "paper":
-                from app.paper_trading.engine import execute_paper_trade
-                from app.db.models import PaperTradingSession
+    strategy_dict = {
+        "id": str(strategy.id),
+        "mapping_template": strategy.mapping_template,
+        "mode": strategy.mode,
+        "broker_connection_id": str(strategy.broker_connection_id) if strategy.broker_connection_id else None,
+        "rules": strategy.rules,
+        "name": strategy.name,
+    }
 
-                ps_result = await session.execute(
-                    select(PaperTradingSession).where(
-                        PaperTradingSession.strategy_id == uuid.UUID(strategy["id"]),
-                        PaperTradingSession.status == "active",
-                    )
-                )
-                paper_session = ps_result.scalar_one_or_none()
-                if paper_session:
-                    execution_result = await execute_paper_trade(
-                        session, paper_session.id, user.id, signal
-                    )
-                else:
-                    execution_result = "no_active_session"
-            elif strategy["mode"] == "live":
-                if not strategy["broker_connection_id"]:
-                    execution_result = "no_broker_connection"
-                else:
-                    from app.brokers.factory import get_broker
-                    from app.brokers.base import OrderRequest as BrokerOrderRequest
-                    from app.crypto.encryption import decrypt_credentials
-                    from app.db.models import BrokerConnection
+    start_time = time.perf_counter()
+    redis = request.app.state.redis
+    arq_redis = request.app.state.arq_redis
 
-                    bc_result = await session.execute(
-                        select(BrokerConnection).where(
-                            BrokerConnection.id == uuid.UUID(strategy["broker_connection_id"]),
-                            BrokerConnection.tenant_id == user.id,
-                        )
-                    )
-                    bc = bc_result.scalar_one_or_none()
-                    if not bc:
-                        execution_result = "broker_connection_not_found"
-                    else:
-                        creds = decrypt_credentials(user.id, bc.credentials)
-                        broker = await get_broker(bc.broker_type, creds)
-                        try:
-                            order_req = BrokerOrderRequest(
-                                symbol=signal.symbol,
-                                exchange=signal.exchange,
-                                action=signal.action,
-                                quantity=signal.quantity,
-                                order_type=signal.order_type or "MARKET",
-                                price=signal.price or Decimal("0"),
-                                product_type=signal.product_type or "DELIVERY",
-                                trigger_price=signal.trigger_price,
-                                leverage=signal.leverage,
-                                position_model=signal.position_model,
-                                position_side=signal.position_side,
-                                take_profit=signal.take_profit,
-                                stop_loss=signal.stop_loss,
-                            )
-                            result = await broker.place_order(order_req)
-                            execution_result = result.status
-                            execution_detail = result.model_dump(mode="json")
-                        except Exception as exc:
-                            execution_result = "broker_error"
-                            execution_detail = {"error": str(exc)}
-                        finally:
-                            await broker.close()
-        else:
-            rule_result_str = "blocked_by_rule"
-            rule_detail = rule_out.reason
+    results = await execute([strategy_dict], payload, redis, session, arq_redis, tenant_id=user.id)
+    await _write_signal_logs(session, results, user.id, payload, start_time)
 
-        ws = WebhookSignal(
-            tenant_id=user.id,
-            strategy_id=uuid.UUID(strategy["id"]),
-            raw_payload=payload,
-            parsed_signal=parsed_signal,
-            rule_result=rule_result_str,
-            rule_detail=rule_detail,
-            execution_result=execution_result,
-            execution_detail=execution_detail,
-            processing_ms=int((time.perf_counter() - start_time) * 1000),
-        )
-        session.add(ws)
-        signals_processed += 1
-
-    await session.commit()
-    return {"received": True, "signals_processed": signals_processed}
+    return {"received": True, "signals_processed": len(results)}
 
 
 # ---------------------------------------------------------------------------
 # Authenticated router – config & signal listing
 # ---------------------------------------------------------------------------
-webhook_config_router = APIRouter(
-    prefix="/api/v1/webhooks", tags=["webhooks"]
-)
+webhook_config_router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
 
 
 @webhook_config_router.get("/config")
@@ -264,8 +203,6 @@ async def list_signals(
     session: AsyncSession = Depends(get_tenant_session),
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
-
-    # Fetch strategies for name lookup
     strat_result = await session.execute(
         select(Strategy).where(Strategy.tenant_id == tenant_id)
     )
@@ -299,8 +236,6 @@ async def list_strategy_signals(
     session: AsyncSession = Depends(get_tenant_session),
 ):
     tenant_id = uuid.UUID(current_user["user_id"])
-
-    # Verify strategy belongs to user
     strat_result = await session.execute(
         select(Strategy).where(
             Strategy.id == strategy_id,
@@ -312,7 +247,6 @@ async def list_strategy_signals(
         raise HTTPException(status_code=404, detail="Strategy not found")
 
     strat_map = {strategy.id: strategy.name}
-
     result = await session.execute(
         select(WebhookSignal)
         .where(
@@ -334,6 +268,7 @@ def _signal_to_dict(s: WebhookSignal, strat_map: dict) -> dict:
         "raw_payload": s.raw_payload,
         "parsed_signal": s.parsed_signal,
         "status": s.rule_result,
+        "rule_result": s.rule_result,
         "error_message": s.rule_detail,
         "execution_result": s.execution_result,
         "execution_detail": s.execution_detail,

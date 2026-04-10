@@ -123,3 +123,75 @@ async def test_webhook_config_regenerate_token(client):
         f"/api/v1/webhook/{old_token}", json={"test": 1}
     )
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_webhook_slug_targets_single_strategy(client):
+    tokens = await create_authenticated_user(client, "slug1@example.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    config = await client.get("/api/v1/webhooks/config", headers=headers)
+    token = config.json()["token"]
+
+    # Create two strategies
+    await client.post(
+        "/api/v1/strategies",
+        json={"name": "NIFTY Long", "mode": "log", "mapping_template": {
+            "symbol": "$.ticker", "exchange": "NSE", "action": "$.action",
+            "quantity": "$.qty", "order_type": "MARKET", "product_type": "INTRADAY",
+        }, "rules": {}},
+        headers=headers,
+    )
+    await client.post(
+        "/api/v1/strategies",
+        json={"name": "NIFTY Short", "mode": "log", "mapping_template": {
+            "symbol": "$.ticker", "exchange": "NSE", "action": "$.action",
+            "quantity": "$.qty", "order_type": "MARKET", "product_type": "INTRADAY",
+        }, "rules": {}},
+        headers=headers,
+    )
+
+    resp = await client.post(
+        f"/api/v1/webhook/{token}/nifty-long",
+        json={"ticker": "NIFTY", "action": "BUY", "qty": "1"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["signals_processed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_webhook_slug_404_for_unknown_slug(client):
+    tokens = await create_authenticated_user(client, "slug2@example.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    config = await client.get("/api/v1/webhooks/config", headers=headers)
+    token = config.json()["token"]
+
+    resp = await client.post(
+        f"/api/v1/webhook/{token}/nonexistent-slug",
+        json={"ticker": "NIFTY", "action": "BUY", "qty": "1"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_webhook_broadcast_still_fans_out(client):
+    tokens = await create_authenticated_user(client, "slug3@example.com")
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    config = await client.get("/api/v1/webhooks/config", headers=headers)
+    token = config.json()["token"]
+
+    for name in ["Strategy A", "Strategy B"]:
+        await client.post(
+            "/api/v1/strategies",
+            json={"name": name, "mode": "log", "mapping_template": {
+                "symbol": "$.ticker", "exchange": "NSE", "action": "$.action",
+                "quantity": "$.qty", "order_type": "MARKET", "product_type": "INTRADAY",
+            }, "rules": {}},
+            headers=headers,
+        )
+
+    resp = await client.post(
+        f"/api/v1/webhook/{token}",
+        json={"ticker": "RELIANCE", "action": "BUY", "qty": "5"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["signals_processed"] == 2
