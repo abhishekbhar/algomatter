@@ -215,7 +215,7 @@ export function useDeployments(strategyId: string | undefined) {
 
 export function useDeployment(id: string | undefined, config?: { refreshInterval?: number }) {
   return useApiGet<Deployment>(id ? `/api/v1/deployments/${id}` : null, {
-    refreshInterval: config?.refreshInterval ?? POLLING_INTERVALS.DEPLOYMENT,
+    refreshInterval: config?.refreshInterval ?? POLLING_INTERVALS.BACKTEST_STATUS,
   });
 }
 
@@ -272,7 +272,7 @@ export function useDeploymentTrades(id: string | undefined, offset = 0, limit = 
 }
 
 export function useDeploymentPosition(id: string | undefined) {
-  return useApiGet<PositionInfo>(id ? `/api/v1/deployments/${id}/position` : null, { refreshInterval: 2000 });
+  return useApiGet<PositionInfo>(id ? `/api/v1/deployments/${id}/position` : null, { refreshInterval: POLLING_INTERVALS.LIVE_TRADING });
 }
 
 export function useDeploymentMetrics(id: string | undefined) {
