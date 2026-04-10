@@ -17,6 +17,7 @@ export interface TokenResponse {
 export interface Strategy {
   id: string;
   name: string;
+  slug: string;
   broker_connection_id: string | null;
   mode: string;
   mapping_template: Record<string, unknown> | null;

@@ -2,20 +2,46 @@
 import {
   Box, Heading, Flex, Code, IconButton, Button, useDisclosure, useToast, useClipboard,
   Card, CardHeader, CardBody, Text, VStack, HStack, Badge,
+  Table, Thead, Tbody, Tr, Th, Td, TableContainer,
 } from "@chakra-ui/react";
 import { useState } from "react";
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
-import { useWebhookConfig, useWebhookSignals } from "@/lib/hooks/useApi";
+import { useWebhookConfig, useWebhookSignals, useStrategies } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatDate } from "@/lib/utils/formatters";
 import type { WebhookSignal } from "@/lib/api/types";
+
+function StrategyUrlRow({ strategy, url }: { strategy: { name: string; slug: string }; url: string }) {
+  const { onCopy, hasCopied } = useClipboard(url);
+  return (
+    <Tr>
+      <Td fontWeight="medium">{strategy.name}</Td>
+      <Td><Code fontSize="xs">{strategy.slug}</Code></Td>
+      <Td>
+        <Code fontSize="xs" maxW="320px" display="block" isTruncated>
+          {url}
+        </Code>
+      </Td>
+      <Td>
+        <IconButton
+          aria-label="Copy strategy URL"
+          icon={hasCopied ? <span>✓</span> : <span>⎘</span>}
+          onClick={onCopy}
+          size="xs"
+          variant="ghost"
+        />
+      </Td>
+    </Tr>
+  );
+}
 
 export default function WebhooksPage() {
   const toast = useToast();
   const { data: config, isLoading: configLoading, mutate: mutateConfig } = useWebhookConfig();
   const { data: signals, isLoading: signalsLoading } = useWebhookSignals();
+  const { data: strategies } = useStrategies();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [regenerating, setRegenerating] = useState(false);
 
@@ -116,7 +142,8 @@ export default function WebhooksPage() {
 
       <Card mb={6}>
         <CardHeader>
-          <Heading size="md">Webhook URL</Heading>
+          <Heading size="md">Broadcast URL</Heading>
+          <Text fontSize="sm" color="gray.500" mt={1}>Triggers all active strategies simultaneously</Text>
         </CardHeader>
         <CardBody>
           <VStack align="stretch" spacing={4}>
@@ -144,6 +171,41 @@ export default function WebhooksPage() {
           </VStack>
         </CardBody>
       </Card>
+
+      {strategies && strategies.length > 0 && (
+        <Card mb={6}>
+          <CardHeader>
+            <Heading size="sm">Strategy URLs</Heading>
+            <Text fontSize="sm" color="gray.500" mt={1}>
+              Target a single strategy by appending its slug to the broadcast URL
+            </Text>
+          </CardHeader>
+          <CardBody p={0}>
+            <TableContainer>
+              <Table size="sm">
+                <Thead>
+                  <Tr>
+                    <Th>Strategy</Th>
+                    <Th>Slug</Th>
+                    <Th>URL</Th>
+                    <Th />
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {strategies.map((s) => {
+                    const stratUrl = config
+                      ? `${window.location.origin}/api/v1/webhook/${config.token}/${s.slug}`
+                      : "";
+                    return (
+                      <StrategyUrlRow key={s.id} strategy={s} url={stratUrl} />
+                    );
+                  })}
+                </Tbody>
+              </Table>
+            </TableContainer>
+          </CardBody>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

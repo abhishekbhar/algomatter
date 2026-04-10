@@ -2,6 +2,7 @@
 import {
   Box, Heading, Text, Flex, Button, Tabs, TabList, TabPanels, Tab, TabPanel,
   Badge, useColorModeValue, Spinner, Center,
+  Card, CardHeader, CardBody, Code, HStack, IconButton, useClipboard,
 } from "@chakra-ui/react";
 import { useRouter, useParams } from "next/navigation";
 import { useMemo } from "react";
@@ -16,6 +17,7 @@ import {
   usePaperSessions,
   useStrategyMetrics,
   useStrategyEquityCurve,
+  useWebhookConfig,
 } from "@/lib/hooks/useApi";
 import { formatDate } from "@/lib/utils/formatters";
 import type { WebhookSignal, PaperSession, EquityCurvePoint } from "@/lib/api/types";
@@ -80,6 +82,35 @@ const sessionColumns: Column<PaperSession>[] = [
   { key: "started_at", header: "Started", render: (v) => v ? formatDate(String(v)) : "" },
 ];
 
+function WebhookUrlCard({ token, slug }: { token: string; slug: string }) {
+  const url = `${typeof window !== "undefined" ? window.location.origin : ""}/api/v1/webhook/${token}/${slug}`;
+  const { onCopy, hasCopied } = useClipboard(url);
+
+  return (
+    <Card mb={6}>
+      <CardHeader pb={2}>
+        <Heading size="sm">Webhook URL</Heading>
+      </CardHeader>
+      <CardBody pt={0}>
+        <HStack>
+          <Code fontSize="sm" flex={1} p={2} borderRadius="md" overflowX="auto">
+            {url}
+          </Code>
+          <IconButton
+            aria-label="Copy webhook URL"
+            icon={hasCopied ? <span>✓</span> : <span>⎘</span>}
+            onClick={onCopy}
+            size="sm"
+          />
+        </HStack>
+        <Text fontSize="xs" color="gray.500" mt={2}>
+          Slug: <Code fontSize="xs">{slug}</Code>
+        </Text>
+      </CardBody>
+    </Card>
+  );
+}
+
 export default function StrategyDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -91,6 +122,7 @@ export default function StrategyDetailPage() {
   const { data: sessions } = usePaperSessions();
   const { data: metrics } = useStrategyMetrics(id);
   const { data: equityData } = useStrategyEquityCurve(id);
+  const { data: webhookConfig } = useWebhookConfig();
 
   const strategySessions = (sessions ?? []).filter((s) => s.strategy_id === id);
 
@@ -155,6 +187,13 @@ export default function StrategyDetailPage() {
           </Box>
         </Flex>
       </Box>
+
+      {strategy && webhookConfig && (
+        <WebhookUrlCard
+          token={webhookConfig.token}
+          slug={strategy.slug}
+        />
+      )}
 
       {/* Tabs */}
       <Tabs variant="enclosed">
