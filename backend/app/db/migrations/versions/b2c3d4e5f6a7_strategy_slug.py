@@ -30,12 +30,14 @@ def upgrade() -> None:
                 ROW_NUMBER() OVER (
                     PARTITION BY tenant_id,
                     lower(trim(both '-' from regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g')))
-                    ORDER BY created_at
+                    ORDER BY created_at, id
                 ) AS rn
             FROM strategies
         )
         UPDATE strategies s
         SET slug = CASE
+            WHEN r.base_slug = '' AND r.rn = 1 THEN 'strategy-' || left(s.id::text, 8)
+            WHEN r.base_slug = '' THEN 'strategy-' || left(s.id::text, 8) || '-' || r.rn::text
             WHEN r.rn = 1 THEN r.base_slug
             ELSE r.base_slug || '-' || r.rn::text
         END

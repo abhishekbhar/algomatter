@@ -82,6 +82,7 @@ class Strategy(Base):
     __tablename__ = "strategies"
     __table_args__ = (
         Index("ix_strategies_tenant_id", "tenant_id"),
+        Index("ix_strategies_slug", "slug"),
         UniqueConstraint("tenant_id", "slug", name="uq_strategies_tenant_slug"),
     )
 
@@ -90,7 +91,7 @@ class Strategy(Base):
         ForeignKey("users.id"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False)
     broker_connection_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("broker_connections.id", ondelete="SET NULL"), nullable=True
     )
