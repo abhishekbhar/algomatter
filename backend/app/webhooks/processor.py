@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from decimal import Decimal
-from datetime import datetime
+from datetime import date, datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from app.webhooks.schemas import StandardSignal
 
@@ -59,3 +59,52 @@ def evaluate_rules(
             return RuleResult(False, f"Outside trading hours ({hours['start']}-{hours['end']})")
 
     return RuleResult(passed=True)
+
+
+async def get_strategy_counts(redis, strategy_id: str) -> tuple[int, int]:
+    """Return (open_positions, signals_today) for a strategy.
+
+    Falls back to (0, 0) if Redis is unavailable.
+    """
+    try:
+        today = date.today().strftime("%Y-%m-%d")
+        positions_key = f"wh:positions:{strategy_id}"
+        signals_key = f"wh:signals:{strategy_id}:{today}"
+        positions, signals = await redis.mget(positions_key, signals_key)
+        return (int(positions or 0), int(signals or 0))
+    except Exception:
+        return (0, 0)
+
+
+async def increment_signals_today(redis, strategy_id: str) -> None:
+    """Increment signals_today counter; auto-expires at midnight IST."""
+    try:
+        today = date.today().strftime("%Y-%m-%d")
+        signals_key = f"wh:signals:{strategy_id}:{today}"
+        await redis.incr(signals_key)
+
+        # Set TTL to end of day in IST
+        tz = ZoneInfo("Asia/Kolkata")
+        now = datetime.now(tz)
+        midnight = datetime.combine(
+            now.date() + timedelta(days=1),
+            time.min,
+            tzinfo=tz,
+        )
+        await redis.expireat(signals_key, int(midnight.timestamp()))
+    except Exception:
+        pass  # Counter is best-effort; don't fail the webhook
+
+
+async def update_position_count(redis, strategy_id: str, action: str) -> None:
+    """Increment (BUY) or decrement (SELL, floor 0) the open_positions counter."""
+    try:
+        key = f"wh:positions:{strategy_id}"
+        if action.upper() == "BUY":
+            await redis.incr(key)
+        elif action.upper() == "SELL":
+            current = await redis.get(key)
+            if current and int(current) > 0:
+                await redis.decr(key)
+    except Exception:
+        pass  # Counter is best-effort; don't fail the webhook
