@@ -9,6 +9,7 @@ import { StatCard } from "@/components/shared/StatCard";
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
+import { Pagination } from "@/components/shared/Pagination";
 import { EquityCurve } from "@/components/charts/EquityCurve";
 import { usePaperSession } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
@@ -23,6 +24,8 @@ export default function PaperTradingDetailPage() {
   const { data: session, isLoading, mutate } = usePaperSession(id ?? null);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [stopping, setStopping] = useState(false);
+  const [tradeOffset, setTradeOffset] = useState(0);
+  const TRADE_PAGE_SIZE = 50;
 
   const positions = session?.positions ?? [];
   const trades = session?.trades ?? [];
@@ -152,8 +155,15 @@ export default function PaperTradingDetailPage() {
           <TabPanel px={0}>
             <DataTable<PaperTrade>
               columns={tradeColumns}
-              data={trades}
+              data={trades.slice(tradeOffset, tradeOffset + TRADE_PAGE_SIZE)}
               emptyMessage="No trades yet."
+            />
+            <Pagination
+              offset={tradeOffset}
+              pageSize={TRADE_PAGE_SIZE}
+              total={trades.length}
+              onPrev={() => setTradeOffset(Math.max(0, tradeOffset - TRADE_PAGE_SIZE))}
+              onNext={() => setTradeOffset(tradeOffset + TRADE_PAGE_SIZE)}
             />
           </TabPanel>
         </TabPanels>

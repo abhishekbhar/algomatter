@@ -93,14 +93,15 @@ export function useWebhookConfig() {
   return useApiGet<WebhookConfig>("/api/v1/webhooks/config");
 }
 
-export function useWebhookSignals(limit = 100) {
+export function useWebhookSignals(offset = 0, limit = 50) {
   const result = useApiGet<{ signals: WebhookSignal[]; total: number; offset: number; limit: number }>(
-    `/api/v1/webhooks/signals?limit=${limit}`,
+    `/api/v1/webhooks/signals?offset=${offset}&limit=${limit}`,
     { refreshInterval: POLLING_INTERVALS.SIGNALS },
   );
   return {
     ...result,
     data: result.data?.signals,
+    total: result.data?.total ?? 0,
   };
 }
 

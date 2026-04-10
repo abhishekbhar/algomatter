@@ -8,6 +8,7 @@ import { useState } from "react";
 import { DataTable, Column } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
+import { Pagination } from "@/components/shared/Pagination";
 import { useWebhookConfig, useWebhookSignals, useStrategies } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatDate } from "@/lib/utils/formatters";
@@ -37,10 +38,13 @@ function StrategyUrlRow({ strategy, url }: { strategy: { name: string; slug: str
   );
 }
 
+const PAGE_SIZE = 50;
+
 export default function WebhooksPage() {
   const toast = useToast();
   const { data: config, isLoading: configLoading, mutate: mutateConfig } = useWebhookConfig();
-  const { data: signals, isLoading: signalsLoading } = useWebhookSignals();
+  const [offset, setOffset] = useState(0);
+  const { data: signals, isLoading: signalsLoading, total } = useWebhookSignals(offset, PAGE_SIZE);
   const { data: strategies } = useStrategies();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [regenerating, setRegenerating] = useState(false);
@@ -217,6 +221,13 @@ export default function WebhooksPage() {
             data={signals ?? []}
             isLoading={signalsLoading}
             emptyMessage="No signals received yet."
+          />
+          <Pagination
+            offset={offset}
+            pageSize={PAGE_SIZE}
+            total={total}
+            onPrev={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+            onNext={() => setOffset(offset + PAGE_SIZE)}
           />
         </CardBody>
       </Card>

@@ -1,5 +1,6 @@
 "use client";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 import {
   Box, Heading, SimpleGrid, Button, useColorModeValue,
 } from "@chakra-ui/react";
@@ -16,6 +17,7 @@ import {
 } from "@/lib/hooks/useApi";
 import { apiClient } from "@/lib/api/client";
 import { formatCurrency, formatPercent, formatNumber } from "@/lib/utils/formatters";
+import { Pagination } from "@/components/shared/Pagination";
 import type { AnalyticsTrade, EquityCurvePoint } from "@/lib/api/types";
 
 const tradeColumns: Column<AnalyticsTrade>[] = [
@@ -45,10 +47,13 @@ function escapeCsvField(value: string): string {
   return value;
 }
 
+const PAGE_SIZE = 50;
+
 export default function StrategyDrilldownPage() {
   const params = useParams();
   const id = params.id as string;
   const cardBg = useColorModeValue("white", "gray.800");
+  const [tradeOffset, setTradeOffset] = useState(0);
 
   const { data: strategy } = useStrategy(id);
   const { data: metrics, isLoading: metricsLoading } = useStrategyMetrics(id);
@@ -172,9 +177,16 @@ export default function StrategyDrilldownPage() {
         </Box>
         <DataTable<AnalyticsTrade>
           columns={tradeColumns}
-          data={trades ?? []}
+          data={(trades ?? []).slice(tradeOffset, tradeOffset + PAGE_SIZE)}
           isLoading={tradesLoading}
           emptyMessage="No trades yet"
+        />
+        <Pagination
+          offset={tradeOffset}
+          pageSize={PAGE_SIZE}
+          total={trades?.length ?? 0}
+          onPrev={() => setTradeOffset(Math.max(0, tradeOffset - PAGE_SIZE))}
+          onNext={() => setTradeOffset(tradeOffset + PAGE_SIZE)}
         />
       </Box>
     </Box>

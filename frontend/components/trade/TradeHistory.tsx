@@ -5,7 +5,10 @@ import {
   useColorModeValue, useToast,
 } from "@chakra-ui/react";
 import { apiClient } from "@/lib/api/client";
+import { Pagination } from "@/components/shared/Pagination";
 import { useManualTrades, useOpenManualTrades } from "@/lib/hooks/useManualTrades";
+
+const HISTORY_PAGE_SIZE = 50;
 
 interface Props {
   onTradeUpdate?: () => void;
@@ -13,8 +16,9 @@ interface Props {
 
 export function TradeHistory({ onTradeUpdate }: Props) {
   const [tab, setTab] = useState<"open" | "history">("open");
+  const [historyOffset, setHistoryOffset] = useState(0);
   const { data: openData, mutate: refreshOpen } = useOpenManualTrades();
-  const { data: historyData, mutate: refreshHistory } = useManualTrades(0, 50);
+  const { data: historyData, mutate: refreshHistory } = useManualTrades(historyOffset, HISTORY_PAGE_SIZE);
   const toast = useToast();
   const borderColor = useColorModeValue("gray.200", "gray.700");
   const bg = useColorModeValue("white", "gray.800");
@@ -30,6 +34,7 @@ export function TradeHistory({ onTradeUpdate }: Props) {
   };
 
   const trades = tab === "open" ? openData?.trades ?? [] : historyData?.trades ?? [];
+  const historyTotal = historyData?.total ?? 0;
 
   return (
     <Box borderTop="1px" borderColor={borderColor} bg={bg}>
@@ -62,6 +67,16 @@ export function TradeHistory({ onTradeUpdate }: Props) {
             </Tbody>
           </Table>
         </Box>
+      )}
+
+      {tab === "history" && (
+        <Pagination
+          offset={historyOffset}
+          pageSize={HISTORY_PAGE_SIZE}
+          total={historyTotal}
+          onPrev={() => setHistoryOffset(Math.max(0, historyOffset - HISTORY_PAGE_SIZE))}
+          onNext={() => setHistoryOffset(historyOffset + HISTORY_PAGE_SIZE)}
+        />
       )}
     </Box>
   );
