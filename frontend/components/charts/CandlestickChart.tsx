@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useEffect } from "react";
+import { memo, useRef, useEffect } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -26,7 +26,7 @@ function toUnix(iso: string): UTCTimestamp {
   return Math.floor(new Date(iso).getTime() / 1000) as UTCTimestamp;
 }
 
-export function CandlestickChart({ data, trades = [], height = 400 }: CandlestickChartProps) {
+export const CandlestickChart = memo(function CandlestickChart({ data, trades = [], height = 400 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
@@ -121,4 +121,4 @@ export function CandlestickChart({ data, trades = [], height = 400 }: Candlestic
   }, [data, trades, height, bgColor, textColor]);
 
   return <div ref={containerRef} />;
-}
+});

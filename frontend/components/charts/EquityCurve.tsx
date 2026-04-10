@@ -1,11 +1,11 @@
 "use client";
-import { useRef, useEffect } from "react";
+import { memo, useRef, useEffect } from "react";
 import { createChart, AreaSeries, IChartApi, AreaData, Time } from "lightweight-charts";
 import { useColorModeValue } from "@chakra-ui/react";
 
 interface EquityCurveProps { data: Array<{ time: string | number; value: number }>; height?: number; }
 
-export function EquityCurve({ data, height = 300 }: EquityCurveProps) {
+export const EquityCurve = memo(function EquityCurve({ data, height = 300 }: EquityCurveProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const bgColor = useColorModeValue("#ffffff", "#1a202c");
@@ -37,4 +37,4 @@ export function EquityCurve({ data, height = 300 }: EquityCurveProps) {
   }, [data, height, bgColor, textColor]);
 
   return <div ref={containerRef} />;
-}
+});
