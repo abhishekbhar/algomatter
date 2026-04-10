@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import Float, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics.metrics import compute_metrics
@@ -29,31 +29,34 @@ async def get_overview(session: AsyncSession, tenant_id: uuid.UUID) -> dict:
     )
     active_strategies = active_q.scalar() or 0
 
-    # Sum PnL from completed StrategyResults
-    results_q = await session.execute(
-        select(StrategyResult.metrics)
-        .where(
+    # Sum total_return from completed StrategyResults via SQL — avoids loading all rows into memory
+    strategy_pnl_q = await session.execute(
+        select(
+            func.coalesce(
+                func.sum(
+                    func.cast(
+                        StrategyResult.metrics["total_return"].as_float(),
+                        Float,
+                    )
+                ),
+                0.0,
+            )
+        ).where(
             StrategyResult.tenant_id == tenant_id,
             StrategyResult.status == "completed",
             StrategyResult.metrics.isnot(None),
         )
     )
-    total_pnl = 0.0
-    for (metrics,) in results_q.all():
-        if metrics and "total_return" in metrics:
-            total_pnl += float(metrics["total_return"])
+    total_pnl = float(strategy_pnl_q.scalar() or 0.0)
 
-    # Sum realized PnL from paper trades (webhook strategies)
+    # Add realized PnL from paper trades (webhook strategies)
     paper_pnl_q = await session.execute(
-        select(func.sum(PaperTrade.realized_pnl))
-        .where(
+        select(func.coalesce(func.sum(PaperTrade.realized_pnl), 0.0)).where(
             PaperTrade.tenant_id == tenant_id,
             PaperTrade.realized_pnl.isnot(None),
         )
     )
-    paper_pnl = paper_pnl_q.scalar()
-    if paper_pnl is not None:
-        total_pnl += float(paper_pnl)
+    total_pnl += float(paper_pnl_q.scalar() or 0.0)
 
     # Open paper positions
     open_pos_q = await session.execute(
