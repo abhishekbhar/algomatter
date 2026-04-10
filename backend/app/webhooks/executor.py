@@ -7,16 +7,18 @@ execute_live_order_task()  — ARQ background task for live broker orders
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.factory import get_broker
 from app.crypto.encryption import decrypt_credentials
-from app.db.models import BrokerConnection, PaperTradingSession, WebhookSignal
+from app.db.models import BrokerConnection, PaperTradingSession, Strategy, WebhookSignal
 from app.db.session import async_session_factory
 from app.paper_trading.engine import execute_paper_trade
 from app.webhooks.mapper import apply_mapping
@@ -27,6 +29,8 @@ from app.webhooks.processor import (
     update_position_count,
 )
 from app.webhooks.schemas import StandardSignal
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -188,6 +192,7 @@ async def execute(
                 "execute_live_order_task",
                 job_payload,
                 _job_id=f"live-order:{signal_id}",
+                _max_retries=2,
             )
             await increment_signals_today(redis, strategy["id"])
             results.append(SignalResult(
@@ -309,3 +314,74 @@ async def execute_live_order_task(ctx: dict, job_payload: dict) -> dict:
             await update_position_count(redis, strategy_id, signal.action)
 
     return {"execution_result": execution_result}
+
+
+# ---------------------------------------------------------------------------
+# Recovery cron — re-enqueue stuck "queued" signals
+# ---------------------------------------------------------------------------
+
+async def recover_queued_signals(ctx: dict) -> None:
+    """Cron task: find WebhookSignals stuck in 'queued' state and re-enqueue them.
+
+    A signal can get stuck if the ARQ worker was down when the job was first
+    enqueued and the job expired from Redis before the worker came back up.
+    Re-enqueueing uses the same _job_id so if the original job is still in
+    the queue it won't be duplicated.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=3)
+    arq_redis = ctx.get("redis")
+    if arq_redis is None:
+        return
+
+    async with async_session_factory() as session:
+        # Atomically mark matching signals as "recovering" to prevent concurrent
+        # cron runs from double-enqueuing the same signal.
+        result = await session.execute(
+            select(WebhookSignal, Strategy)
+            .join(Strategy, WebhookSignal.strategy_id == Strategy.id)
+            .where(
+                WebhookSignal.execution_result == "queued",
+                WebhookSignal.received_at < cutoff,
+                Strategy.mode == "live",
+                Strategy.broker_connection_id.isnot(None),
+            )
+        )
+        rows = result.all()
+        if not rows:
+            return
+
+        signal_ids = [ws.id for ws, _ in rows]
+        await session.execute(
+            update(WebhookSignal)
+            .where(
+                WebhookSignal.id.in_(signal_ids),
+                WebhookSignal.execution_result == "queued",  # double-check
+            )
+            .values(execution_result="recovering")
+        )
+        await session.commit()
+
+    recovered = 0
+    for ws, strategy in rows:
+        if ws.parsed_signal is None:
+            logger.warning("recover_queued_signals: signal %s has no parsed_signal, skipping", ws.id)
+            continue
+        job_payload = {
+            "strategy_id": str(strategy.id),
+            "broker_connection_id": str(strategy.broker_connection_id),
+            "tenant_id": str(ws.tenant_id),
+            "signal": ws.parsed_signal,
+            "webhook_signal_id": str(ws.id),
+        }
+        job_id = f"live-order:{ws.id}"
+        await arq_redis.enqueue_job(
+            "execute_live_order_task",
+            job_payload,
+            _job_id=job_id,
+            _max_retries=2,
+        )
+        recovered += 1
+        logger.info("recover_queued_signals: re-enqueued signal %s (job %s)", ws.id, job_id)
+
+    if recovered:
+        logger.info("recover_queued_signals: re-enqueued %d stuck signal(s)", recovered)
