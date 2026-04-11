@@ -42,6 +42,7 @@ class SignalResult:
     execution_result: str | None = None
     execution_detail: dict | None = None
     parsed_signal: dict | None = None
+    signal_id: uuid.UUID | None = None  # Set for live orders; used as WebhookSignal.id
 
 
 async def _get_active_paper_session(session: AsyncSession, strategy_id: uuid.UUID):
@@ -225,6 +226,7 @@ async def execute(
                 parsed_signal=signal.model_dump(mode="json"),
                 execution_result="queued",
                 execution_detail={"job_id": job_id},
+                signal_id=signal_id,
             ))
 
         else:

@@ -75,7 +75,7 @@ async def _write_signal_logs(
     start_time: float,
 ) -> None:
     for r in results:
-        ws = WebhookSignal(
+        ws_kwargs = dict(
             tenant_id=tenant_id,
             strategy_id=uuid.UUID(r.strategy_id),
             raw_payload=raw_payload,
@@ -86,6 +86,9 @@ async def _write_signal_logs(
             execution_detail=r.execution_detail,
             processing_ms=int((time.perf_counter() - start_time) * 1000),
         )
+        if r.signal_id is not None:
+            ws_kwargs["id"] = r.signal_id
+        ws = WebhookSignal(**ws_kwargs)
         session.add(ws)
     await session.commit()
 
