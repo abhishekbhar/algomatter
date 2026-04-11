@@ -82,6 +82,9 @@ class BrokerBalanceResponse(BaseModel):
     available: float
     total: float
     used_margin: float
+    frozen_deposit: float = 0.0
+    unrealized_pnl: float = 0.0
+    currency: str = "USDT"
 
 
 class BrokerOrderResponse(BaseModel):

@@ -99,21 +99,87 @@ Response structure:
 {
   "data": {
     "accounts": [
-      { "biz": {"name": "asset"}, "currencies": [...] },
-      { "biz": {"name": "spot"},  "currencies": [...] },
-      { "biz": {"name": "cfd"},   "currencies": [...] }
+      { "biz": {"name": "otc"},     "cryptoTotal": 0, "fiatTotal": 0, "total": 0, "currencies": [...] },
+      { "biz": {"name": "options"}, "cryptoTotal": 0, "fiatTotal": 0, "total": 0, "currencies": [...] },
+      { "biz": {"name": "cfd"},     "cryptoTotal": 0, "fiatTotal": 0, "total": 0, "currencies": [...] },
+      { "biz": {"name": "asset"},   "cryptoTotal": 0, "fiatTotal": 0, "total": 0, "currencies": [...] },
+      { "biz": {"name": "spot"},    "cryptoTotal": 0, "fiatTotal": 0, "total": 0, "currencies": [...] }
     ]
   }
 }
 ```
 
+Every account has **USD-equivalent aggregate fields**:
+- `cryptoTotal` — USD value of crypto holdings in this account
+- `fiatTotal` — USD value of fiat holdings in this account
+- `total` — `cryptoTotal + fiatTotal`
+- `acct_total` (adapter-computed) = `cryptoTotal + fiatTotal` — universal aggregate for all account types
+
 | Biz | Contents |
 |-----|----------|
 | `asset` | Base-token holdings (BTC, ETH, SOL) — use for `get_positions` |
-| `spot` | Quote currencies (USDT, USDC) — use for `get_balance` |
-| `cfd` | Futures margin (USDT) |
+| `spot` | Quote currencies (USDT, USDC, LINK, etc.) — **Global 2 only** (India's `spot` is empty) |
+| `cfd` | Futures margin — INR for India, USDT for Global 2 |
+| `otc` | OTC account (usually empty) |
+| `options` | Options account (usually empty) |
 
 ⚠️ Base-token spot balances are in `asset`, **not** `spot`.
+
+### Currency fields per account entry
+
+Each entry in `currencies` has a `balance` object:
+
+```json
+{
+  "displayCode": "USDT",
+  "balance": {
+    "available": 8.3195,
+    "hold": 0.0,
+    "margin": 2.4721,
+    "profitUnreal": -0.2751,
+    "total": 10.5165,
+    "availableMargin": 8.3195
+  }
+}
+```
+
+| Field | Maps to | Notes |
+|-------|---------|-------|
+| `availableMargin` | `available` (futures) | Prefer over `available` for futures |
+| `margin` | `used_margin` | Active margin in use |
+| `hold` | `frozen_deposit` | Frozen/locked funds |
+| `profitUnreal` | `unrealized_pnl` | Floating P&L |
+| `total` | `total` | Per-currency total |
+
+### India vs Global 2 — Balance Logic
+
+**Futures (`get_balance("FUTURES")`)**
+- Both use `cfd` account, `availableMargin` field
+- India: currency is `INR`; Global 2: currency is `USDT`
+- Logic is identical — currency propagates automatically
+
+**Spot (`get_balance("SPOT")`)**
+- Global 2: `spot` account has USDT/USDC/LINK → use `acct_total` (USD aggregate), report as `USD`
+- India: `spot` account is empty → fall back to `asset` account, find `INR` entry, report as `INR`
+
+```python
+# Adapter logic (simplified):
+if product_type == "SPOT":
+    # Try spot account first (Global 2)
+    for acc in accounts:
+        if acc["account_type"] == "spot":
+            at = Decimal(str(acc.get("acct_total", 0)))
+            if at > 0:
+                return AccountBalance(available=at, total=at, currency="USD")
+    # Fall back to INR asset account (India)
+    for acc in accounts:
+        if acc["account_type"] == "asset" and acc["currency"] == "INR":
+            ...
+```
+
+### IP Allowlist
+
+Exchange1 enforces server IP whitelisting per API key. If the production server IP is not whitelisted, the API returns HTTP 500 with body `{"data": "ip is error"}`. Fix: add `194.61.31.226` to the API key's allowed IPs in Exchange1 settings.
 
 ---
 

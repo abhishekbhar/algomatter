@@ -90,7 +90,10 @@ class AccountBalance(BaseModel):
 
     available: Decimal
     used_margin: Decimal = Decimal("0")
+    frozen_deposit: Decimal = Decimal("0")
+    unrealized_pnl: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
+    currency: str = "USDT"
 
 
 class Quote(BaseModel):

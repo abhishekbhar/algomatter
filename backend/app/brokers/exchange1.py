@@ -551,15 +551,21 @@ class Exchange1Broker(BrokerAdapter):
             biz_name = acct.get("biz", {}).get("name", "")
             if biz_name not in ("spot", "cfd", "asset"):
                 continue
+            # acct_total = USD-equivalent aggregate across all currencies in this account
+            # (cryptoTotal covers USDT/crypto; fiatTotal covers INR/fiat — sum gives full picture)
+            acct_total = float((acct.get("cryptoTotal") or 0) + (acct.get("fiatTotal") or 0))
             for cur in acct.get("currencies", []):
                 bal = cur.get("balance", {})
                 flat.append({
                     "currency": cur.get("displayCode") or cur.get("name", ""),
                     "available": bal.get("available", 0),
                     "hold": bal.get("hold", 0),
+                    "margin": bal.get("margin", 0),          # used/locked margin
+                    "profit_unreal": bal.get("profitUnreal", 0),  # unrealized PnL
                     "total": bal.get("total", 0),
                     "available_margin": bal.get("availableMargin", bal.get("available", 0)),
                     "account_type": biz_name,
+                    "acct_total": acct_total,
                 })
 
         self._account_cache = (now, flat)
@@ -578,34 +584,54 @@ class Exchange1Broker(BrokerAdapter):
         accounts = await self._get_balance_data()
 
         if product_type == "FUTURES":
-            # Exchange1 Global: futures margin is USDT in the cfd account.
-            # Exchange1 India: futures margin is INR in the asset account (cfd is unfunded).
-            # Try cfd with a non-zero balance first; fall back to asset INR.
+            # Both Global and India keep futures margin in the cfd account.
+            # Global: USDT.  India: INR (fiatTotal on the account, not cryptoTotal).
+            # Fall back to asset only as a last resort (should not normally be needed).
             for acc in accounts:
                 if acc.get("account_type") == "cfd":
                     avail = Decimal(str(acc.get("available_margin", "0")))
                     if avail > 0:
                         return AccountBalance(
                             available=avail,
-                            used_margin=Decimal(str(acc.get("hold", "0"))),
+                            used_margin=Decimal(str(acc.get("margin", "0"))),
+                            frozen_deposit=Decimal(str(acc.get("hold", "0"))),
+                            unrealized_pnl=Decimal(str(acc.get("profit_unreal", "0"))),
                             total=Decimal(str(acc.get("total", "0"))),
+                            currency=acc.get("currency", "USDT"),
                         )
             for acc in accounts:
                 if acc.get("account_type") == "asset":
                     return AccountBalance(
                         available=Decimal(str(acc.get("available", "0"))),
-                        used_margin=Decimal(str(acc.get("hold", "0"))),
+                        used_margin=Decimal(str(acc.get("margin", "0"))),
+                        frozen_deposit=Decimal(str(acc.get("hold", "0"))),
+                        unrealized_pnl=Decimal(str(acc.get("profit_unreal", "0"))),
                         total=Decimal(str(acc.get("total", "0"))),
+                        currency=acc.get("currency", "INR"),
                     )
             return AccountBalance(available=Decimal("0"), used_margin=Decimal("0"), total=Decimal("0"))
 
         if product_type == "SPOT":
+            # Exchange1 Global: spot account holds multiple currencies (USDT, USDC, LINK…).
+            #   Use acct_total = cryptoTotal + fiatTotal (USD-equivalent aggregate) so all
+            #   currencies are included, matching what the exchange UI displays.
+            # Exchange1 India: spot account is empty; fiat lives in the cfd account as INR.
             for acc in accounts:
-                if acc.get("account_type") == "asset" and acc.get("currency") == "INR":
+                if acc.get("account_type") == "spot":
+                    at = Decimal(str(acc.get("acct_total", 0)))
+                    if at > 0:
+                        return AccountBalance(
+                            available=at,
+                            total=at,
+                            currency="USD",
+                        )
+            for acc in accounts:
+                if acc.get("account_type") == "asset" and acc.get("currency") == "INR" and Decimal(str(acc.get("available", "0"))) > 0:
                     return AccountBalance(
                         available=Decimal(str(acc.get("available", "0"))),
                         used_margin=Decimal(str(acc.get("hold", "0"))),
                         total=Decimal(str(acc.get("total", "0"))),
+                        currency="INR",
                     )
             return AccountBalance(available=Decimal("0"), used_margin=Decimal("0"), total=Decimal("0"))
 

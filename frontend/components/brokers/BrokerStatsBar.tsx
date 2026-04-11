@@ -4,27 +4,32 @@ import {
   useColorModeValue,
 } from "@chakra-ui/react";
 import { useBrokerStats, useBrokerBalance } from "@/lib/hooks/useApi";
-import { getBrokerCaps } from "@/components/trade/BrokerCapabilities";
 
 interface Props {
   brokerId: string;
   brokerType?: string;
 }
 
-function formatPnl(pnl: number): string {
-  const sign = pnl >= 0 ? "+" : "-";
-  return `${sign}₹${Math.abs(pnl).toFixed(2)}`;
+function currencySymbol(currency: string): string {
+  if (currency === "INR") return "₹";
+  return "";
 }
 
-function formatAmount(symbol: string, n: number, currency: string): string {
-  return `${symbol}${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`;
+function formatPnl(pnl: number, currency: string): string {
+  const sign = pnl >= 0 ? "+" : "-";
+  const sym = currencySymbol(currency);
+  return `${sign}${sym}${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`;
+}
+
+function formatAmount(n: number, currency: string): string {
+  const sym = currencySymbol(currency);
+  return `${sym}${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`;
 }
 
 export function BrokerStatsBar({ brokerId, brokerType }: Props) {
   const { data: stats, isLoading: statsLoading } = useBrokerStats(brokerId);
   const { data: futuresBalance } = useBrokerBalance(brokerId, "FUTURES");
   const { data: spotBalance } = useBrokerBalance(brokerId, "SPOT");
-  const caps = brokerType ? getBrokerCaps(brokerType) : null;
   const cardBg = useColorModeValue("white", "gray.800");
   const borderColor = useColorModeValue("gray.200", "gray.700");
   const pnlColor = stats && stats.total_realized_pnl >= 0 ? "green.400" : "red.400";
@@ -39,10 +44,8 @@ export function BrokerStatsBar({ brokerId, brokerType }: Props) {
     );
   }
 
-  const futuresSym = caps?.futuresCurrencySymbol ?? "";
-  const futuresCur = caps?.futuresCurrency ?? "USDT";
-  const spotSym = caps?.currencySymbol ?? "";
-  const spotCur = caps?.currency ?? "USDT";
+  const futuresCur = futuresBalance?.currency ?? "USDT";
+  const spotCur = spotBalance?.currency ?? "USDT";
 
   return (
     <Box mb={6}>
@@ -53,7 +56,7 @@ export function BrokerStatsBar({ brokerId, brokerType }: Props) {
         </Stat>
         <Stat bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
           <StatLabel>Total Realized P&L</StatLabel>
-          <StatNumber color={pnlColor}>{stats ? formatPnl(stats.total_realized_pnl) : "—"}</StatNumber>
+          <StatNumber color={pnlColor}>{stats ? formatPnl(stats.total_realized_pnl, futuresCur) : "—"}</StatNumber>
         </Stat>
         <Stat bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
           <StatLabel>Win Rate</StatLabel>
@@ -71,18 +74,24 @@ export function BrokerStatsBar({ brokerId, brokerType }: Props) {
           <Text fontSize="xs" fontWeight="semibold" color="yellow.400" textTransform="uppercase" mb={3}>
             Futures Account
           </Text>
-          <SimpleGrid columns={3} spacing={3}>
+          <SimpleGrid columns={4} spacing={3}>
             <Stat>
               <StatLabel fontSize="xs">Available Margin</StatLabel>
-              <StatNumber fontSize="sm">{futuresBalance !== undefined ? formatAmount(futuresSym, futuresBalance.available, futuresCur) : "—"}</StatNumber>
+              <StatNumber fontSize="sm">{futuresBalance !== undefined ? formatAmount(futuresBalance.available, futuresCur) : "—"}</StatNumber>
+            </Stat>
+            <Stat>
+              <StatLabel fontSize="xs">Frozen Deposit</StatLabel>
+              <StatNumber fontSize="sm">{futuresBalance !== undefined ? formatAmount(futuresBalance.frozen_deposit, futuresCur) : "—"}</StatNumber>
             </Stat>
             <Stat>
               <StatLabel fontSize="xs">Used Margin</StatLabel>
-              <StatNumber fontSize="sm" color="orange.400">{futuresBalance !== undefined ? formatAmount(futuresSym, futuresBalance.used_margin, futuresCur) : "—"}</StatNumber>
+              <StatNumber fontSize="sm" color="orange.400">{futuresBalance !== undefined ? formatAmount(futuresBalance.used_margin, futuresCur) : "—"}</StatNumber>
             </Stat>
             <Stat>
-              <StatLabel fontSize="xs">Total</StatLabel>
-              <StatNumber fontSize="sm">{futuresBalance !== undefined ? formatAmount(futuresSym, futuresBalance.total, futuresCur) : "—"}</StatNumber>
+              <StatLabel fontSize="xs">Unrealized PnL</StatLabel>
+              <StatNumber fontSize="sm" color={futuresBalance && futuresBalance.unrealized_pnl >= 0 ? "green.400" : "red.400"}>
+                {futuresBalance !== undefined ? formatPnl(futuresBalance.unrealized_pnl, futuresCur) : "—"}
+              </StatNumber>
             </Stat>
           </SimpleGrid>
         </Box>
@@ -95,15 +104,15 @@ export function BrokerStatsBar({ brokerId, brokerType }: Props) {
           <SimpleGrid columns={3} spacing={3}>
             <Stat>
               <StatLabel fontSize="xs">Available</StatLabel>
-              <StatNumber fontSize="sm">{spotBalance !== undefined ? formatAmount(spotSym, spotBalance.available, spotCur) : "—"}</StatNumber>
+              <StatNumber fontSize="sm">{spotBalance !== undefined ? formatAmount(spotBalance.available, spotCur) : "—"}</StatNumber>
             </Stat>
             <Stat>
               <StatLabel fontSize="xs">On Hold</StatLabel>
-              <StatNumber fontSize="sm" color="orange.400">{spotBalance !== undefined ? formatAmount(spotSym, spotBalance.used_margin, spotCur) : "—"}</StatNumber>
+              <StatNumber fontSize="sm" color="orange.400">{spotBalance !== undefined ? formatAmount(spotBalance.used_margin, spotCur) : "—"}</StatNumber>
             </Stat>
             <Stat>
               <StatLabel fontSize="xs">Total</StatLabel>
-              <StatNumber fontSize="sm">{spotBalance !== undefined ? formatAmount(spotSym, spotBalance.total, spotCur) : "—"}</StatNumber>
+              <StatNumber fontSize="sm">{spotBalance !== undefined ? formatAmount(spotBalance.total, spotCur) : "—"}</StatNumber>
             </Stat>
           </SimpleGrid>
         </Box>

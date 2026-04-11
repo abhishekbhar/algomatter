@@ -277,6 +277,9 @@ async def get_broker_balance(
         available=float(balance.available),
         total=float(balance.total),
         used_margin=float(balance.used_margin),
+        frozen_deposit=float(balance.frozen_deposit),
+        unrealized_pnl=float(balance.unrealized_pnl),
+        currency=balance.currency,
     )
 
 

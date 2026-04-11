@@ -395,6 +395,9 @@ export interface BrokerBalance {
   available: number;
   total: number;
   used_margin: number;
+  frozen_deposit: number;
+  unrealized_pnl: number;
+  currency: string;
 }
 
 export interface LivePosition {
