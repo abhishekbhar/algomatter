@@ -2,7 +2,7 @@
 import {
   Box, Heading, FormControl, FormLabel, Input, Select, Radio, RadioGroup,
   Stack, Switch, Button, VStack, useToast, NumberInput,
-  NumberInputField, Divider, Text, Flex,
+  NumberInputField, Divider, Text, Flex, Collapse,
 } from "@chakra-ui/react";
 import { useRouter } from "next/navigation";
 import { useState, useCallback } from "react";
@@ -20,6 +20,12 @@ interface StrategyForm {
   symbol_blacklist: string;
   max_positions: number;
   max_signals_per_day: number;
+  trading_hours_enabled: boolean;
+  trading_hours_start: string;
+  trading_hours_end: string;
+  trading_hours_timezone: string;
+  dual_leg_enabled: boolean;
+  dual_leg_max_trades: number;
 }
 
 export default function NewStrategyPage() {
@@ -28,6 +34,8 @@ export default function NewStrategyPage() {
   const { data: brokers } = useBrokers();
   const { data: webhookConfig } = useWebhookConfig();
   const [submitting, setSubmitting] = useState(false);
+  const [tradingHoursOpen, setTradingHoursOpen] = useState(false);
+  const [dualLegOpen, setDualLegOpen] = useState(false);
   const [form, setForm] = useState<StrategyForm>({
     name: "",
     broker_connection_id: "",
@@ -38,6 +46,12 @@ export default function NewStrategyPage() {
     symbol_blacklist: "",
     max_positions: 10,
     max_signals_per_day: 50,
+    trading_hours_enabled: false,
+    trading_hours_start: "09:15",
+    trading_hours_end: "15:30",
+    trading_hours_timezone: "Asia/Kolkata",
+    dual_leg_enabled: false,
+    dual_leg_max_trades: 5,
   });
 
   const handleMappingChange = useCallback(
@@ -66,6 +80,15 @@ export default function NewStrategyPage() {
       });
       return;
     }
+    // Guard: trading hours start must be before end
+    if (form.trading_hours_enabled && form.trading_hours_start >= form.trading_hours_end) {
+      toast({
+        title: "Trading hours: start time must be before end time",
+        status: "error",
+        duration: 4000,
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       const payload = {
@@ -83,6 +106,18 @@ export default function NewStrategyPage() {
             : [],
           max_positions: form.max_positions,
           max_signals_per_day: form.max_signals_per_day,
+          ...(form.trading_hours_enabled
+            ? {
+                trading_hours: {
+                  start: form.trading_hours_start,
+                  end: form.trading_hours_end,
+                  timezone: form.trading_hours_timezone,
+                },
+              }
+            : {}),
+          ...(form.dual_leg_enabled
+            ? { dual_leg: { enabled: true, max_trades: form.dual_leg_max_trades } }
+            : {}),
         },
       };
       await apiClient("/api/v1/strategies", { method: "POST", body: payload });
@@ -198,6 +233,119 @@ export default function NewStrategyPage() {
               <NumberInputField />
             </NumberInput>
           </FormControl>
+
+          {/* Trading Hours Panel */}
+          <Box border="1px" borderColor="gray.200" borderRadius="md" overflow="hidden">
+            <Flex
+              align="center"
+              justify="space-between"
+              px={4}
+              py={3}
+              cursor="pointer"
+              onClick={() => setTradingHoursOpen(!tradingHoursOpen)}
+              _hover={{ bg: "gray.50" }}
+            >
+              <Flex align="center" gap={2}>
+                <Text fontSize="sm">{tradingHoursOpen ? "▼" : "▶"}</Text>
+                <Text fontWeight="medium">Trading Hours</Text>
+              </Flex>
+              <Switch
+                isChecked={form.trading_hours_enabled}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  const checked = e.target.checked;
+                  setForm({ ...form, trading_hours_enabled: checked });
+                  if (checked) setTradingHoursOpen(true);
+                }}
+              />
+            </Flex>
+            <Collapse in={tradingHoursOpen} animateOpacity>
+              <Box px={4} pb={4} pt={2} borderTop="1px" borderColor="gray.200">
+                <Stack spacing={3}>
+                  <Flex gap={4}>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Start</FormLabel>
+                      <Input
+                        type="time"
+                        value={form.trading_hours_start}
+                        onChange={(e) => setForm({ ...form, trading_hours_start: e.target.value })}
+                        isDisabled={!form.trading_hours_enabled}
+                        size="sm"
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">End</FormLabel>
+                      <Input
+                        type="time"
+                        value={form.trading_hours_end}
+                        onChange={(e) => setForm({ ...form, trading_hours_end: e.target.value })}
+                        isDisabled={!form.trading_hours_enabled}
+                        size="sm"
+                      />
+                    </FormControl>
+                  </Flex>
+                  <FormControl>
+                    <FormLabel fontSize="sm">Timezone</FormLabel>
+                    <Select
+                      value={form.trading_hours_timezone}
+                      onChange={(e) => setForm({ ...form, trading_hours_timezone: e.target.value })}
+                      isDisabled={!form.trading_hours_enabled}
+                      size="sm"
+                    >
+                      <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                      <option value="UTC">UTC</option>
+                      <option value="US/Eastern">US/Eastern (ET)</option>
+                      <option value="US/Pacific">US/Pacific (PT)</option>
+                    </Select>
+                  </FormControl>
+                </Stack>
+              </Box>
+            </Collapse>
+          </Box>
+
+          {/* Dual-Leg Execution Panel */}
+          <Box border="1px" borderColor="gray.200" borderRadius="md" overflow="hidden">
+            <Flex
+              align="center"
+              justify="space-between"
+              px={4}
+              py={3}
+              cursor="pointer"
+              onClick={() => setDualLegOpen(!dualLegOpen)}
+              _hover={{ bg: "gray.50" }}
+            >
+              <Flex align="center" gap={2}>
+                <Text fontSize="sm">{dualLegOpen ? "▼" : "▶"}</Text>
+                <Text fontWeight="medium">Dual-Leg Execution</Text>
+              </Flex>
+              <Switch
+                isChecked={form.dual_leg_enabled}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  const checked = e.target.checked;
+                  setForm({ ...form, dual_leg_enabled: checked });
+                  if (checked) setDualLegOpen(true);
+                }}
+              />
+            </Flex>
+            <Collapse in={dualLegOpen} animateOpacity>
+              <Box px={4} pb={4} pt={2} borderTop="1px" borderColor="gray.200">
+                {form.dual_leg_enabled && (
+                  <FormControl>
+                    <FormLabel fontSize="sm">Max Trades</FormLabel>
+                    <NumberInput
+                      value={form.dual_leg_max_trades}
+                      onChange={(_, val) => setForm({ ...form, dual_leg_max_trades: val || 0 })}
+                      min={0}
+                    >
+                      <NumberInputField />
+                    </NumberInput>
+                    <Text fontSize="xs" color="gray.500" mt={1}>0 = unlimited</Text>
+                  </FormControl>
+                )}
+              </Box>
+            </Collapse>
+          </Box>
 
           <Flex gap={3} pt={4}>
             <Button type="submit" colorScheme="blue" isLoading={submitting}>
