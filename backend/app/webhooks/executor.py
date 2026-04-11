@@ -15,6 +15,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 
 import structlog
@@ -33,6 +34,10 @@ from app.webhooks.processor import (
     get_strategy_counts,
     increment_signals_today,
     update_position_count,
+    get_dual_leg_state,
+    set_dual_leg_position,
+    clear_dual_leg_position,
+    increment_dual_leg_trade_count,
 )
 from app.webhooks.schemas import StandardSignal
 
@@ -86,6 +91,131 @@ async def _execute_paper(
         parsed_signal=signal.model_dump(mode="json"),
         execution_result=result,
     )
+
+
+def _is_position_not_found(execution_detail: dict) -> bool:
+    """Return True if broker error indicates the position was already closed (Exchange1 9012)."""
+    return "9012" in execution_detail.get("error", "")
+
+
+def _is_stop_condition(dual_leg_config: dict, strategy: dict, trade_count: int) -> bool:
+    """Return True if no new open legs should be placed."""
+    max_trades = dual_leg_config.get("max_trades", 0)
+    if max_trades and trade_count >= max_trades:
+        return True
+    if hours := strategy.get("rules", {}).get("trading_hours"):
+        tz = ZoneInfo(hours.get("timezone", "Asia/Kolkata"))
+        now_time = datetime.now(tz).time()
+        start = datetime.strptime(hours["start"], "%H:%M").time()
+        end = datetime.strptime(hours["end"], "%H:%M").time()
+        if not (start <= now_time <= end):
+            return True
+    return False
+
+
+async def _execute_dual_leg(
+    strategy: dict,
+    signal: StandardSignal,
+    tenant_id: uuid.UUID,
+    redis,
+    dual_leg_config: dict,
+) -> tuple[str, dict]:
+    """Execute close-then-open legs for a dual-leg strategy.
+
+    Returns (execution_result, execution_detail) where:
+    - execution_result: "opened" | "reversed" | "closed" | "close_failed" |
+                        "open_failed" | "no_action"
+    - execution_detail: {"close": OrderResponse|None, "open": OrderResponse|None}
+    """
+    strategy_id = strategy["id"]
+    broker_connection_id = strategy["broker_connection_id"]
+    action = signal.action.upper()  # "BUY" or "SELL"
+    opposite_action = "SELL" if action == "BUY" else "BUY"
+    new_side = "long" if action == "BUY" else "short"
+    current_side_map = {"BUY": "long", "SELL": "short"}
+    existing_side_for_action = current_side_map[action]
+
+    position_side, trade_count = await get_dual_leg_state(redis, strategy_id)
+    stop = _is_stop_condition(dual_leg_config, strategy, trade_count)
+
+    # Determine what to do
+    same_side = (position_side == existing_side_for_action)
+    need_close = (
+        position_side != ""
+        and (stop or position_side != existing_side_for_action)
+    )
+    need_open = not stop and (
+        position_side == "" or position_side != existing_side_for_action
+    )
+
+    if same_side and not stop:
+        return "no_action", {"close": None, "open": None}
+
+    if not need_close and not need_open:
+        return "no_action", {"close": None, "open": None}
+
+    close_detail = None
+    open_detail = None
+
+    # --- Close leg ---
+    if need_close:
+        close_signal = StandardSignal(
+            symbol=signal.symbol,
+            exchange=signal.exchange,
+            action=opposite_action,
+            quantity=signal.quantity,
+            order_type="MARKET",
+            product_type=signal.product_type,
+            leverage=signal.leverage,
+            position_model=signal.position_model,
+        )
+        exec_result, exec_detail = await _place_live_order(
+            broker_connection_id, tenant_id, strategy_id, close_signal, redis,
+            update_redis=False,
+        )
+
+        if exec_result in ("filled", "accepted"):
+            close_detail = exec_detail
+            await clear_dual_leg_position(redis, strategy_id)
+        elif _is_position_not_found(exec_detail):
+            # Position already closed on exchange — treat as success
+            close_detail = {"status": "already_closed"}
+            await clear_dual_leg_position(redis, strategy_id)
+        else:
+            # Close genuinely failed — abort
+            logger.warning(
+                "dual_leg_close_failed",
+                strategy_id=strategy_id,
+                error=exec_detail.get("error"),
+            )
+            return "close_failed", {"close": exec_detail, "open": None}
+
+    # --- Open leg ---
+    if need_open:
+        exec_result, exec_detail = await _place_live_order(
+            broker_connection_id, tenant_id, strategy_id, signal, redis,
+            update_redis=False,
+        )
+        open_detail = exec_detail
+
+        if exec_result in ("filled", "accepted"):
+            await set_dual_leg_position(redis, strategy_id, new_side)
+            await increment_dual_leg_trade_count(redis, strategy_id)
+            await increment_signals_today(redis, strategy_id)
+            outcome = "reversed" if need_close else "opened"
+        else:
+            logger.warning(
+                "dual_leg_open_failed",
+                strategy_id=strategy_id,
+                error=exec_detail.get("error"),
+            )
+            outcome = "open_failed"
+
+        return outcome, {"close": close_detail, "open": open_detail}
+
+    # Only close leg ran (stop condition)
+    await increment_signals_today(redis, strategy_id)
+    return "closed", {"close": close_detail, "open": None}
 
 
 async def _place_live_order(
