@@ -8,6 +8,10 @@ from app.webhooks.processor import (
     get_strategy_counts,
     increment_signals_today,
     update_position_count,
+    get_dual_leg_state,
+    set_dual_leg_position,
+    clear_dual_leg_position,
+    increment_dual_leg_trade_count,
 )
 
 
@@ -85,3 +89,59 @@ async def test_increment_signals_today_redis_failure_does_not_raise():
     redis.incr.side_effect = Exception("Redis down")
     # Should not raise
     await increment_signals_today(redis, "strat-123")
+
+
+@pytest.mark.asyncio
+async def test_get_dual_leg_state_returns_defaults_when_missing():
+    redis = AsyncMock()
+    redis.mget.return_value = [None, None]
+    side, count = await get_dual_leg_state(redis, "strat-1")
+    assert side == ""
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_get_dual_leg_state_returns_stored_values():
+    redis = AsyncMock()
+    redis.mget.return_value = [b"long", b"3"]
+    side, count = await get_dual_leg_state(redis, "strat-1")
+    assert side == "long"
+    assert count == 3
+
+
+@pytest.mark.asyncio
+async def test_get_dual_leg_state_returns_defaults_on_redis_error():
+    redis = AsyncMock()
+    redis.mget.side_effect = Exception("redis down")
+    side, count = await get_dual_leg_state(redis, "strat-1")
+    assert side == ""
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_set_dual_leg_position_sets_key_with_ttl():
+    redis = AsyncMock()
+    await set_dual_leg_position(redis, "strat-1", "long")
+    redis.set.assert_called_once()
+    args, kwargs = redis.set.call_args
+    assert args[0] == "dual_leg:strat-1:position_side"
+    assert args[1] == "long"
+    assert "ex" in kwargs
+
+
+@pytest.mark.asyncio
+async def test_clear_dual_leg_position_sets_empty_string():
+    redis = AsyncMock()
+    await clear_dual_leg_position(redis, "strat-1")
+    redis.set.assert_called_once()
+    args, kwargs = redis.set.call_args
+    assert args[0] == "dual_leg:strat-1:position_side"
+    assert args[1] == ""
+
+
+@pytest.mark.asyncio
+async def test_increment_dual_leg_trade_count_increments_with_ttl():
+    redis = AsyncMock()
+    await increment_dual_leg_trade_count(redis, "strat-1")
+    redis.incr.assert_called_once_with("dual_leg:strat-1:trade_count")
+    redis.expireat.assert_called_once()

@@ -109,3 +109,53 @@ async def update_position_count(redis, strategy_id: str, action: str) -> None:
                 await redis.decr(key)
     except Exception:
         pass  # Counter is best-effort; don't fail the webhook
+
+
+async def get_dual_leg_state(redis, strategy_id: str) -> tuple[str, int]:
+    """Return (position_side, trade_count) for dual-leg tracking.
+
+    position_side: "" | "long" | "short"
+    trade_count: number of open legs placed today
+    Falls back to ("", 0) if Redis is unavailable.
+    """
+    try:
+        side_key = f"dual_leg:{strategy_id}:position_side"
+        count_key = f"dual_leg:{strategy_id}:trade_count"
+        side, count = await redis.mget(side_key, count_key)
+        return (side.decode() if side else "", int(count or 0))
+    except Exception:
+        return ("", 0)
+
+
+async def set_dual_leg_position(redis, strategy_id: str, side: str) -> None:
+    """Set position_side with 24-hour TTL."""
+    try:
+        key = f"dual_leg:{strategy_id}:position_side"
+        await redis.set(key, side, ex=86400)
+    except Exception:
+        pass
+
+
+async def clear_dual_leg_position(redis, strategy_id: str) -> None:
+    """Clear position_side (set to empty string) with 24-hour TTL."""
+    try:
+        key = f"dual_leg:{strategy_id}:position_side"
+        await redis.set(key, "", ex=86400)
+    except Exception:
+        pass
+
+
+async def increment_dual_leg_trade_count(redis, strategy_id: str) -> None:
+    """Increment trade_count; auto-expires at midnight IST."""
+    try:
+        key = f"dual_leg:{strategy_id}:trade_count"
+        await redis.incr(key)
+        now = datetime.now(_IST)
+        midnight = datetime.combine(
+            now.date() + timedelta(days=1),
+            time.min,
+            tzinfo=_IST,
+        )
+        await redis.expireat(key, int(midnight.timestamp()))
+    except Exception:
+        pass
