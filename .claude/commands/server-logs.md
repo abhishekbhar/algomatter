@@ -22,13 +22,47 @@ Map the argument to the service name:
 - `frontend` → `algomatter-frontend`
 - `website` → `algomatter-website`
 
+## Authentication
+
+Server uses **password auth** (no SSH key). Use paramiko via the backend venv:
+
 ```bash
-ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@194.61.31.226 'journalctl -u <service-name> --no-pager -n 30'
+source /home/abhishekbhar/projects/algomatter_worktree/algomatter/backend/.venv/bin/activate
+```
+
+Credentials in `/home/abhishekbhar/projects/algomatter_worktree/contabo-server.txt`.
+
+## Python command (use this — sshpass not available)
+
+For a single service (replace `<service-name>` and adjust `-n` as needed):
+
+```python
+import paramiko
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect('194.61.31.226', username='root', password='IDilXKY3NvaQXQFa6NWyB475OeH3', timeout=15)
+stdin, stdout, stderr = client.exec_command('journalctl -u <service-name> --no-pager -n 30')
+print(stdout.read().decode())
+client.close()
 ```
 
 For nginx:
-```bash
-ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@194.61.31.226 'tail -30 /var/log/nginx/error.log'
+```python
+stdin, stdout, stderr = client.exec_command('tail -30 /var/log/nginx/error.log')
 ```
 
-For `all`, run each with `-n 10` and label the output.
+For `all`, run each service with `-n 10` and label output.
+
+## Full bash invocation pattern
+
+```bash
+source /home/abhishekbhar/projects/algomatter_worktree/algomatter/backend/.venv/bin/activate && python3 - <<'EOF'
+import paramiko
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect('194.61.31.226', username='root', password='IDilXKY3NvaQXQFa6NWyB475OeH3', timeout=15)
+stdin, stdout, stderr = client.exec_command('journalctl -u algomatter-api --no-pager -n 30')
+print(stdout.read().decode())
+client.close()
+EOF
+```

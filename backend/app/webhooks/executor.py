@@ -132,7 +132,6 @@ async def _execute_dual_leg(
     strategy_id = strategy["id"]
     broker_connection_id = strategy["broker_connection_id"]
     action = signal.action.upper()  # "BUY" or "SELL"
-    opposite_action = "SELL" if action == "BUY" else "BUY"
     new_side = "long" if action == "BUY" else "short"
     current_side_map = {"BUY": "long", "SELL": "short"}
     existing_side_for_action = current_side_map[action]
@@ -161,15 +160,20 @@ async def _execute_dual_leg(
 
     # --- Close leg ---
     if need_close:
+        # To close a long: SELL + None (→ "long" default) → _close_futures
+        # To close a short: BUY + "short"               → _close_futures
+        close_action = "SELL" if position_side == "long" else "BUY"
+        close_side = None if position_side == "long" else "short"
         close_signal = StandardSignal(
             symbol=signal.symbol,
             exchange=signal.exchange,
-            action=opposite_action,
+            action=close_action,
             quantity=signal.quantity,
             order_type="MARKET",
             product_type=signal.product_type,
             leverage=signal.leverage,
             position_model=signal.position_model,
+            position_side=close_side,
         )
         exec_result, exec_detail = await _place_live_order(
             broker_connection_id, tenant_id, strategy_id, close_signal, redis,
@@ -194,8 +198,12 @@ async def _execute_dual_leg(
 
     # --- Open leg ---
     if need_open:
+        # Explicitly set position_side so the broker dispatches to _open_futures,
+        # not _close_futures (which happens when position_side is None and
+        # action=SELL, because SELL+long(default) → _close_futures).
+        open_signal = signal.model_copy(update={"position_side": new_side})
         exec_result, exec_detail = await _place_live_order(
-            broker_connection_id, tenant_id, strategy_id, signal, redis,
+            broker_connection_id, tenant_id, strategy_id, open_signal, redis,
             update_redis=False,
         )
         open_detail = exec_detail
