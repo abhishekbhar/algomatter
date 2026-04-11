@@ -4,13 +4,14 @@ import time
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user, get_session, get_tenant_session
 from app.config import settings
 from app.db.models import Strategy, User, WebhookSignal
+from app.db.session import async_session_factory
 from app.webhooks.executor import SignalResult, execute
 
 logger = structlog.get_logger(__name__)
@@ -68,35 +69,44 @@ async def _get_active_strategies(redis, session: AsyncSession, tenant_id: uuid.U
 
 
 async def _write_signal_logs(
-    session: AsyncSession,
     results: list[SignalResult],
     tenant_id: uuid.UUID,
     raw_payload: dict,
-    start_time: float,
+    processing_ms: int,
 ) -> None:
-    for r in results:
-        ws_kwargs = dict(
-            tenant_id=tenant_id,
-            strategy_id=uuid.UUID(r.strategy_id),
-            raw_payload=raw_payload,
-            parsed_signal=r.parsed_signal,
-            rule_result=r.rule_result,
-            rule_detail=r.rule_detail,
-            execution_result=r.execution_result,
-            execution_detail=r.execution_detail,
-            processing_ms=int((time.perf_counter() - start_time) * 1000),
-        )
-        if r.signal_id is not None:
-            ws_kwargs["id"] = r.signal_id
-        ws = WebhookSignal(**ws_kwargs)
-        session.add(ws)
-    await session.commit()
+    """Write webhook signal log records.
+
+    Opens its own session so it can be safely used as a FastAPI BackgroundTask
+    (the injected request session is closed before background tasks run).
+    """
+    try:
+        async with async_session_factory() as session:
+            for r in results:
+                ws_kwargs = dict(
+                    tenant_id=tenant_id,
+                    strategy_id=uuid.UUID(r.strategy_id),
+                    raw_payload=raw_payload,
+                    parsed_signal=r.parsed_signal,
+                    rule_result=r.rule_result,
+                    rule_detail=r.rule_detail,
+                    execution_result=r.execution_result,
+                    execution_detail=r.execution_detail,
+                    processing_ms=processing_ms,
+                )
+                if r.signal_id is not None:
+                    ws_kwargs["id"] = r.signal_id
+                ws = WebhookSignal(**ws_kwargs)
+                session.add(ws)
+            await session.commit()
+    except Exception:
+        logger.error("write_signal_logs_failed", tenant_id=str(tenant_id))
 
 
 @webhook_public_router.post("/api/v1/webhook/{token}")
 async def receive_webhook(
     token: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
     start_time = time.perf_counter()
@@ -113,7 +123,6 @@ async def receive_webhook(
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     redis = request.app.state.redis
-    arq_redis = request.app.state.arq_redis
     strategies = await _get_active_strategies(redis, session, user.id)
 
     logger.info(
@@ -123,8 +132,9 @@ async def receive_webhook(
         payload_keys=list(payload.keys()),
     )
 
-    results = await execute(strategies, payload, redis, session, arq_redis, tenant_id=user.id)
-    await _write_signal_logs(session, results, user.id, payload, start_time)
+    results = await execute(strategies, payload, redis, session, tenant_id=user.id)
+    processing_ms = int((time.perf_counter() - start_time) * 1000)
+    background_tasks.add_task(_write_signal_logs, results, user.id, payload, processing_ms)
 
     _log_dispatch_results(results, str(user.id))
     return {"received": True, "signals_processed": len(results)}
@@ -135,6 +145,7 @@ async def receive_webhook_targeted(
     token: str,
     slug: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
     start_time = time.perf_counter()
@@ -181,10 +192,10 @@ async def receive_webhook_targeted(
     )
 
     redis = request.app.state.redis
-    arq_redis = request.app.state.arq_redis
 
-    results = await execute([strategy_dict], payload, redis, session, arq_redis, tenant_id=user.id)
-    await _write_signal_logs(session, results, user.id, payload, start_time)
+    results = await execute([strategy_dict], payload, redis, session, tenant_id=user.id)
+    processing_ms = int((time.perf_counter() - start_time) * 1000)
+    background_tasks.add_task(_write_signal_logs, results, user.id, payload, processing_ms)
 
     _log_dispatch_results(results, str(user.id))
     return {"received": True, "signals_processed": len(results)}

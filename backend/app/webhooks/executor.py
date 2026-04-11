@@ -1,8 +1,13 @@
 # backend/app/webhooks/executor.py
 """Webhook execution pipeline.
 
-execute()                  — public entry point called from router
-execute_live_order_task()  — ARQ background task for live broker orders
+execute()                  — public entry point called from router.
+                             Live orders are placed synchronously (awaited) so
+                             latency stays in the milliseconds range.
+                             Paper trades are executed concurrently via asyncio.gather.
+_place_live_order()        — opens its own DB session, decrypts creds, calls
+                             broker.place_order(), updates Redis counters.
+execute_live_order_task()  — ARQ background task used only by the recovery cron.
 """
 from __future__ import annotations
 
@@ -83,24 +88,111 @@ async def _execute_paper(
     )
 
 
+async def _place_live_order(
+    broker_connection_id: str,
+    tenant_id: uuid.UUID,
+    strategy_id: str,
+    signal: StandardSignal,
+    redis,
+) -> tuple[str, dict]:
+    """Open own DB session, decrypt credentials, call broker.place_order().
+
+    Returns (execution_result, execution_detail).
+    Updates Redis position counters on success.
+    Does NOT write to the WebhookSignal table (that is the router's job).
+    """
+    from app.brokers.base import OrderRequest as BrokerOrderRequest
+
+    execution_result = "broker_error"
+    execution_detail: dict = {}
+    broker = None
+
+    async with async_session_factory() as session:
+        bc_result = await session.execute(
+            select(BrokerConnection).where(
+                BrokerConnection.id == uuid.UUID(broker_connection_id),
+                BrokerConnection.tenant_id == tenant_id,
+            )
+        )
+        bc = bc_result.scalar_one_or_none()
+        if not bc:
+            logger.error("live_order_broker_not_found", broker_connection_id=broker_connection_id)
+            return "broker_not_found", {"error": "broker_connection_not_found"}
+
+        try:
+            creds = decrypt_credentials(tenant_id, bc.credentials)
+            broker = await get_broker(bc.broker_type, creds)
+
+            order_req = BrokerOrderRequest(
+                symbol=signal.symbol,
+                exchange=signal.exchange,
+                action=signal.action,
+                quantity=signal.quantity,
+                order_type=signal.order_type or "MARKET",
+                price=signal.price or Decimal("0"),
+                product_type=signal.product_type or "DELIVERY",
+                trigger_price=signal.trigger_price,
+                leverage=signal.leverage,
+                position_model=signal.position_model,
+                position_side=signal.position_side,
+                take_profit=signal.take_profit,
+                stop_loss=signal.stop_loss,
+            )
+            order_response = await broker.place_order(order_req)
+            execution_result = order_response.status
+            execution_detail = order_response.model_dump(mode="json")
+            logger.info(
+                "live_order_placed",
+                strategy_id=strategy_id,
+                symbol=signal.symbol,
+                action=signal.action,
+                execution_result=execution_result,
+                broker_order_id=execution_detail.get("order_id"),
+            )
+        except Exception as exc:
+            execution_result = "broker_error"
+            execution_detail = {"error": str(exc)}
+            logger.error(
+                "live_order_broker_error",
+                strategy_id=strategy_id,
+                symbol=signal.symbol,
+                action=signal.action,
+                error=str(exc),
+            )
+        finally:
+            if broker is not None:
+                await broker.close()
+
+    # Update Redis position counter
+    if redis and execution_result in ("filled", "accepted"):
+        await update_position_count(redis, strategy_id, signal.action)
+        await increment_signals_today(redis, strategy_id)
+
+    return execution_result, execution_detail
+
+
 async def execute(
     strategies: list[dict],
     payload: dict,
     redis,
     session: AsyncSession,
-    arq_redis,
+    arq_redis=None,  # kept for interface compatibility; unused on primary path
     tenant_id: uuid.UUID | None = None,
 ) -> list[SignalResult]:
     """Process a webhook payload against a list of strategies.
 
-    Paper trades are executed concurrently.
-    Live orders are enqueued as ARQ background jobs.
+    Live orders are placed synchronously (awaited) so the HTTP response
+    reflects the real execution outcome and latency stays in milliseconds.
+    Multiple live strategies are executed concurrently via asyncio.gather.
+    Paper trades are also executed concurrently via asyncio.gather.
     """
     results: list[SignalResult] = []
     paper_tasks: list[asyncio.Task] = []
     paper_task_indices: list[int] = []
+    live_tasks: list[asyncio.Task] = []
+    live_task_indices: list[int] = []
 
-    # Phase 1: map, evaluate rules, enqueue live jobs
+    # Phase 1: map, evaluate rules, schedule coroutines
     for strategy in strategies:
         if not strategy.get("mapping_template"):
             results.append(SignalResult(
@@ -197,37 +289,32 @@ async def execute(
                 continue
 
             signal_id = uuid.uuid4()
-            job_id = f"live-order:{signal_id}"
-            job_payload = {
-                "strategy_id": strategy["id"],
-                "broker_connection_id": strategy["broker_connection_id"],
-                "tenant_id": str(tenant_id),
-                "signal": signal.model_dump(mode="json"),
-                "webhook_signal_id": str(signal_id),
-                "trace_id": trace_id_var.get(""),
-            }
-            await arq_redis.enqueue_job(
-                "execute_live_order_task",
-                job_payload,
-                _job_id=job_id,
-            )
-            await increment_signals_today(redis, strategy["id"])
-            logger.info(
-                "live_order_queued",
-                strategy_id=strategy["id"],
-                strategy=strategy.get("name"),
-                job_id=job_id,
-                symbol=signal.symbol,
-                action=signal.action,
-            )
+            idx = len(results)
             results.append(SignalResult(
                 strategy_id=strategy["id"],
                 rule_result="passed",
                 parsed_signal=signal.model_dump(mode="json"),
-                execution_result="queued",
-                execution_detail={"job_id": job_id},
+                execution_result="pending",
                 signal_id=signal_id,
             ))
+            t = asyncio.create_task(
+                _place_live_order(
+                    strategy["broker_connection_id"],
+                    tenant_id,
+                    strategy["id"],
+                    signal,
+                    redis,
+                )
+            )
+            live_tasks.append(t)
+            live_task_indices.append(idx)
+            logger.info(
+                "live_order_started",
+                strategy_id=strategy["id"],
+                strategy=strategy.get("name"),
+                symbol=signal.symbol,
+                action=signal.action,
+            )
 
         else:
             # "log" mode — signal recorded, no execution
@@ -238,18 +325,26 @@ async def execute(
                 execution_result=None,
             ))
 
-    # Phase 2: run paper trades concurrently
-    if paper_tasks:
-        paper_results = await asyncio.gather(*paper_tasks, return_exceptions=True)
-        for idx, paper_result in zip(paper_task_indices, paper_results):
-            if isinstance(paper_result, Exception):
+    # Phase 2: run live orders and paper trades concurrently
+    all_tasks = live_tasks + paper_tasks
+    all_indices = live_task_indices + paper_task_indices
+    is_live = [True] * len(live_tasks) + [False] * len(paper_tasks)
+
+    if all_tasks:
+        all_results = await asyncio.gather(*all_tasks, return_exceptions=True)
+        for idx, task_result, live in zip(all_indices, all_results, is_live):
+            if isinstance(task_result, Exception):
                 results[idx].execution_result = "error"
-                results[idx].execution_detail = {"error": str(paper_result)}
+                results[idx].execution_detail = {"error": str(task_result)}
+            elif live:
+                execution_result, execution_detail = task_result
+                results[idx].execution_result = execution_result
+                results[idx].execution_detail = execution_detail
             else:
-                results[idx].execution_result = paper_result.execution_result
-                results[idx].execution_detail = paper_result.execution_detail
-                # Update Redis position counter for successful paper trades
-                if paper_result.execution_result == "filled":
+                # paper result
+                results[idx].execution_result = task_result.execution_result
+                results[idx].execution_detail = task_result.execution_detail
+                if task_result.execution_result == "filled":
                     signal_data = results[idx].parsed_signal or {}
                     await update_position_count(
                         redis,
@@ -262,12 +357,15 @@ async def execute(
 
 
 # ---------------------------------------------------------------------------
-# ARQ background task — live broker order execution
+# ARQ background task — used only by the recovery cron path
 # ---------------------------------------------------------------------------
 
 async def execute_live_order_task(ctx: dict, job_payload: dict) -> dict:
-    """ARQ task: place a live broker order and update the WebhookSignal log."""
-    # Restore trace_id from the originating HTTP request for end-to-end correlation
+    """ARQ task: place a live broker order and update the WebhookSignal log.
+
+    This task is only invoked by the recover_queued_signals cron.
+    Normal webhook execution calls _place_live_order directly (synchronously).
+    """
     _token = trace_id_var.set(job_payload.get("trace_id", ""))
     try:
         return await _execute_live_order(ctx, job_payload)
@@ -296,69 +394,13 @@ async def _execute_live_order(ctx: dict, job_payload: dict) -> dict:
         order_type=signal.order_type,
     )
 
+    redis = ctx.get("redis")
+    execution_result, execution_detail = await _place_live_order(
+        broker_connection_id, tenant_id, strategy_id, signal, redis
+    )
+
+    # Update WebhookSignal log record
     async with async_session_factory() as session:
-        # Fetch broker connection
-        bc_result = await session.execute(
-            select(BrokerConnection).where(
-                BrokerConnection.id == uuid.UUID(broker_connection_id),
-                BrokerConnection.tenant_id == tenant_id,
-            )
-        )
-        bc = bc_result.scalar_one_or_none()
-        if not bc:
-            logger.error("live_order_broker_not_found", broker_connection_id=broker_connection_id)
-            return {"error": "broker_connection_not_found"}
-
-        execution_result = "broker_error"
-        execution_detail: dict = {}
-        broker = None
-
-        try:
-            creds = decrypt_credentials(tenant_id, bc.credentials)
-            broker = await get_broker(bc.broker_type, creds)
-
-            from app.brokers.base import OrderRequest as BrokerOrderRequest
-            order_req = BrokerOrderRequest(
-                symbol=signal.symbol,
-                exchange=signal.exchange,
-                action=signal.action,
-                quantity=signal.quantity,
-                order_type=signal.order_type or "MARKET",
-                price=signal.price or Decimal("0"),
-                product_type=signal.product_type or "DELIVERY",
-                trigger_price=signal.trigger_price,
-                leverage=signal.leverage,
-                position_model=signal.position_model,
-                position_side=signal.position_side,
-                take_profit=signal.take_profit,
-                stop_loss=signal.stop_loss,
-            )
-            order_response = await broker.place_order(order_req)
-            execution_result = order_response.status
-            execution_detail = order_response.model_dump(mode="json")
-            logger.info(
-                "live_order_placed",
-                strategy_id=strategy_id,
-                symbol=signal.symbol,
-                action=signal.action,
-                execution_result=execution_result,
-                broker_order_id=execution_detail.get("order_id"),
-            )
-        except Exception as exc:
-            execution_result = "broker_error"
-            execution_detail = {"error": str(exc)}
-            logger.error(
-                "live_order_broker_error",
-                strategy_id=strategy_id,
-                symbol=signal.symbol,
-                action=signal.action,
-                error=str(exc),
-            )
-        finally:
-            if broker is not None:
-                await broker.close()
-
-        # Update WebhookSignal log record
         ws_result = await session.execute(
             select(WebhookSignal).where(WebhookSignal.id == webhook_signal_id)
         )
@@ -367,11 +409,6 @@ async def _execute_live_order(ctx: dict, job_payload: dict) -> dict:
             ws.execution_result = execution_result
             ws.execution_detail = execution_detail
             await session.commit()
-
-        # Update Redis position counter
-        redis = ctx.get("redis")
-        if redis and execution_result in ("filled", "accepted"):
-            await update_position_count(redis, strategy_id, signal.action)
 
     return {"execution_result": execution_result}
 
