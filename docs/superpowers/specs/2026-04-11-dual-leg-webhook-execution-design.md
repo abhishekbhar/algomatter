@@ -65,8 +65,9 @@ trade_count   = int(await redis.get(f"dual_leg:{strategy_id}:trade_count") or 0)
 ### Step 2 — Evaluate stop condition
 Stop condition is met when **any** of the following is true:
 - `trade_count >= dual_leg.max_trades`
-- Strategy `is_active == False`
 - Current time is outside `rules.trading_hours` (if configured)
+
+> **Note:** `strategy.is_active == False` is not checked here — inactive strategies are filtered out by `_get_active_strategies()` (queries `Strategy.is_active.is_(True)`) before `execute()` is called. The routing layer handles deactivation.
 
 ### Step 3 — Determine legs to execute
 

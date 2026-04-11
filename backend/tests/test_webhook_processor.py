@@ -126,7 +126,8 @@ async def test_set_dual_leg_position_sets_key_with_ttl():
     args, kwargs = redis.set.call_args
     assert args[0] == "dual_leg:strat-1:position_side"
     assert args[1] == "long"
-    assert "ex" in kwargs
+    assert "ex" not in kwargs
+    redis.expireat.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -137,6 +138,8 @@ async def test_clear_dual_leg_position_sets_empty_string():
     args, kwargs = redis.set.call_args
     assert args[0] == "dual_leg:strat-1:position_side"
     assert args[1] == ""
+    assert "ex" not in kwargs
+    redis.expireat.assert_called_once()
 
 
 @pytest.mark.asyncio

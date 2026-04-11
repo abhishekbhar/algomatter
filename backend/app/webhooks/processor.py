@@ -128,19 +128,33 @@ async def get_dual_leg_state(redis, strategy_id: str) -> tuple[str, int]:
 
 
 async def set_dual_leg_position(redis, strategy_id: str, side: str) -> None:
-    """Set position_side with 24-hour TTL."""
+    """Set position_side; auto-expires at midnight IST."""
     try:
         key = f"dual_leg:{strategy_id}:position_side"
-        await redis.set(key, side, ex=86400)
+        await redis.set(key, side)
+        now = datetime.now(_IST)
+        midnight = datetime.combine(
+            now.date() + timedelta(days=1),
+            time.min,
+            tzinfo=_IST,
+        )
+        await redis.expireat(key, int(midnight.timestamp()))
     except Exception:
         pass
 
 
 async def clear_dual_leg_position(redis, strategy_id: str) -> None:
-    """Clear position_side (set to empty string) with 24-hour TTL."""
+    """Clear position_side (set to empty string); auto-expires at midnight IST."""
     try:
         key = f"dual_leg:{strategy_id}:position_side"
-        await redis.set(key, "", ex=86400)
+        await redis.set(key, "")
+        now = datetime.now(_IST)
+        midnight = datetime.combine(
+            now.date() + timedelta(days=1),
+            time.min,
+            tzinfo=_IST,
+        )
+        await redis.expireat(key, int(midnight.timestamp()))
     except Exception:
         pass
 
