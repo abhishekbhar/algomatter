@@ -19,7 +19,7 @@ const wrap = (ui: React.ReactElement) =>
 describe("WebhookParameterBuilder", () => {
   it("calls onChange on mount with a valid futures mapping_template", async () => {
     const onChange = jest.fn();
-    wrap(<WebhookParameterBuilder value={null} onChange={onChange} />);
+    wrap(<WebhookParameterBuilder initialValue={null} onChange={onChange} />);
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1][0];
     expect(lastCall.exchange).toBe("EXCHANGE1");
@@ -31,7 +31,7 @@ describe("WebhookParameterBuilder", () => {
 
   it("emits DELIVERY product_type when Spot tab is selected", async () => {
     const onChange = jest.fn();
-    wrap(<WebhookParameterBuilder value={null} onChange={onChange} />);
+    wrap(<WebhookParameterBuilder initialValue={null} onChange={onChange} />);
     fireEvent.click(screen.getByRole("tab", { name: "Spot" }));
     await waitFor(() => {
       const calls = onChange.mock.calls;
@@ -42,7 +42,7 @@ describe("WebhookParameterBuilder", () => {
 
   it("emits fixed value (not JSONPath) when source is Fixed", async () => {
     const onChange = jest.fn();
-    wrap(<WebhookParameterBuilder value={null} onChange={onChange} />);
+    wrap(<WebhookParameterBuilder initialValue={null} onChange={onChange} />);
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1][0];
     expect(lastCall.order_type).toBe("MARKET");
@@ -51,7 +51,7 @@ describe("WebhookParameterBuilder", () => {
 
   it("emits JSONPath when source is toggled to From signal", async () => {
     const onChange = jest.fn();
-    wrap(<WebhookParameterBuilder value={null} onChange={onChange} />);
+    wrap(<WebhookParameterBuilder initialValue={null} onChange={onChange} />);
     fireEvent.click(screen.getByTestId("order_type-signal-btn"));
     await waitFor(() => {
       const calls = onChange.mock.calls;
@@ -62,7 +62,7 @@ describe("WebhookParameterBuilder", () => {
 
   it("does not include optional fields when show optional is collapsed", async () => {
     const onChange = jest.fn();
-    wrap(<WebhookParameterBuilder value={null} onChange={onChange} />);
+    wrap(<WebhookParameterBuilder initialValue={null} onChange={onChange} />);
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1][0];
     expect(lastCall).not.toHaveProperty("price");
@@ -72,7 +72,7 @@ describe("WebhookParameterBuilder", () => {
 
   it("includes optional fields after expanding optional section", async () => {
     const onChange = jest.fn();
-    wrap(<WebhookParameterBuilder value={null} onChange={onChange} />);
+    wrap(<WebhookParameterBuilder initialValue={null} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: /show optional/i }));
     fireEvent.change(screen.getByTestId("price-signal-input"), {
       target: { value: "close" },
@@ -86,7 +86,7 @@ describe("WebhookParameterBuilder", () => {
 
   it("emits leverage as a JS number, not a string", async () => {
     const onChange = jest.fn();
-    wrap(<WebhookParameterBuilder value={null} onChange={onChange} />);
+    wrap(<WebhookParameterBuilder initialValue={null} onChange={onChange} />);
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1][0];
     expect(typeof lastCall.leverage).toBe("number");

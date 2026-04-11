@@ -214,7 +214,7 @@ export default function EditStrategyPage() {
           <Box>
             <Text fontWeight="medium" mb={3}>Signal Mapping</Text>
             <WebhookParameterBuilder
-              value={form.mapping_template_obj}
+              initialValue={strategy?.mapping_template as Record<string, unknown> | null ?? null}
               onChange={handleMappingChange}
               webhookUrl={
                 webhookConfig?.webhook_url && strategy?.slug

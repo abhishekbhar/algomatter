@@ -28,7 +28,7 @@ interface RowState {
 type BuilderRows = Record<string, RowState>;
 
 interface Props {
-  value: Record<string, unknown> | null;
+  initialValue: Record<string, unknown> | null;
   onChange: (value: Record<string, unknown>) => void;
   webhookUrl?: string;
 }
@@ -94,7 +94,7 @@ function computeMapping(
   return template;
 }
 
-export function WebhookParameterBuilder({ value, onChange, webhookUrl }: Props) {
+export function WebhookParameterBuilder({ initialValue, onChange, webhookUrl }: Props) {
   const [mode, setMode] = useState<"futures" | "spot">("futures");
   const [futuresRows, setFuturesRows] = useState<BuilderRows>(DEFAULT_FUTURES_ROWS);
   const [spotRows, setSpotRows] = useState<BuilderRows>(DEFAULT_SPOT_ROWS);
@@ -105,10 +105,10 @@ export function WebhookParameterBuilder({ value, onChange, webhookUrl }: Props) 
   const [showOptional, setShowOptional] = useState(false);
 
   // Populate internal state from the saved mapping template (edit mode).
-  // Only runs once when a non-null value first arrives.
+  // Only runs once when a non-null initialValue first arrives.
   const initializedRef = useRef(false);
   useEffect(() => {
-    if (!value || initializedRef.current) return;
+    if (!initialValue || initializedRef.current) return;
     initializedRef.current = true;
 
     function parseRow(v: unknown): RowState {
@@ -118,7 +118,7 @@ export function WebhookParameterBuilder({ value, onChange, webhookUrl }: Props) 
       return { source: "fixed", fixedValue: v as string | number | null, signalField: "" };
     }
 
-    const productType = value.product_type as string | undefined;
+    const productType = initialValue.product_type as string | undefined;
     const newMode: "futures" | "spot" = productType === "FUTURES" ? "futures" : "spot";
     setMode(newMode);
 
@@ -133,7 +133,7 @@ export function WebhookParameterBuilder({ value, onChange, webhookUrl }: Props) 
       ? { ...DEFAULT_FUTURES_ROWS }
       : { ...DEFAULT_SPOT_ROWS };
     for (const key of requiredKeys) {
-      if (key in value) newRows[key] = parseRow(value[key]);
+      if (key in initialValue) newRows[key] = parseRow(initialValue[key]);
     }
 
     const newOptional: BuilderRows = newMode === "futures"
@@ -141,8 +141,8 @@ export function WebhookParameterBuilder({ value, onChange, webhookUrl }: Props) 
       : { ...DEFAULT_SPOT_OPTIONAL };
     let hasOptional = false;
     for (const key of optionalKeysList) {
-      if (key in value) {
-        newOptional[key] = parseRow(value[key]);
+      if (key in initialValue) {
+        newOptional[key] = parseRow(initialValue[key]);
         hasOptional = true;
       }
     }
@@ -155,7 +155,7 @@ export function WebhookParameterBuilder({ value, onChange, webhookUrl }: Props) 
       setSpotOptional(newOptional);
     }
     if (hasOptional) setShowOptional(true);
-  }, [value]);
+  }, [initialValue]);
 
   const rows = mode === "futures" ? futuresRows : spotRows;
   const setRows = mode === "futures" ? setFuturesRows : setSpotRows;

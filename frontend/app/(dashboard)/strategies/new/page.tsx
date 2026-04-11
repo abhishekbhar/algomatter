@@ -183,7 +183,7 @@ export default function NewStrategyPage() {
           <Box>
             <Text fontWeight="medium" mb={3}>Signal Mapping</Text>
             <WebhookParameterBuilder
-              value={form.mapping_template_obj}
+              initialValue={null}
               onChange={handleMappingChange}
               webhookUrl={webhookUrl}
             />
