@@ -139,30 +139,14 @@ async def test_place_live_order_skips_redis_update_when_flag_false():
         product_type="FUTURES",
     )
 
-    mock_order_response = MagicMock()
-    mock_order_response.status = "filled"
-    mock_order_response.model_dump.return_value = {"status": "filled", "order_id": "123"}
+    mock_broker = AsyncMock()
 
-    with patch("app.webhooks.executor.async_session_factory") as mock_factory, \
-         patch("app.webhooks.executor.get_broker", new_callable=AsyncMock) as mock_broker_fn, \
-         patch("app.webhooks.executor.decrypt_credentials", return_value={}):
+    with patch("app.webhooks.executor.broker_pool") as mock_pool, \
+         patch("app.webhooks.executor._place_order_with_broker",
+               return_value=("filled", {"status": "filled", "order_id": "123"})):
 
-        mock_bc = MagicMock()
-        mock_bc.broker_type = "exchange1"
-        mock_bc.credentials = b"enc"
-
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = mock_bc
-        mock_session.execute = AsyncMock(return_value=mock_result)
-        mock_factory.return_value = mock_session
-
-        mock_broker = AsyncMock()
-        mock_broker.place_order = AsyncMock(return_value=mock_order_response)
-        mock_broker.close = AsyncMock()
-        mock_broker_fn.return_value = mock_broker
+        mock_pool.get = AsyncMock(return_value=mock_broker)
+        mock_pool.evict = AsyncMock()
 
         from app.webhooks.executor import _place_live_order
         result, detail = await _place_live_order(
@@ -208,10 +192,16 @@ def _make_futures_signal(action="BUY"):
     )
 
 
-def _mock_place_live_order(result="filled", detail=None):
-    """Patch _place_live_order to return a fixed result."""
+def _mock_broker_pool(broker=None):
+    """Patch broker_pool.get to return a mock broker."""
+    mock_broker = broker or AsyncMock()
+    return patch("app.webhooks.executor.broker_pool"), mock_broker
+
+
+def _mock_place_order_with_broker(result="filled", detail=None):
+    """Patch _place_order_with_broker to return a fixed result."""
     return patch(
-        "app.webhooks.executor._place_live_order",
+        "app.webhooks.executor._place_order_with_broker",
         new_callable=AsyncMock,
         return_value=(result, detail or {"status": result, "order_id": "abc"}),
     )
@@ -225,13 +215,18 @@ async def test_dual_leg_first_signal_opens_only():
     redis = AsyncMock()
     strategy = _make_dual_leg_strategy(max_trades=5)
     signal = _make_futures_signal(action="BUY")
+    mock_broker = AsyncMock()
 
     with patch("app.webhooks.executor.get_dual_leg_state", new_callable=AsyncMock, return_value=("", 0)), \
-         _mock_place_live_order("filled") as mock_place, \
+         patch("app.webhooks.executor.broker_pool") as mock_pool, \
+         _mock_place_order_with_broker("filled") as mock_place, \
          patch("app.webhooks.executor.set_dual_leg_position", new_callable=AsyncMock) as mock_set, \
          patch("app.webhooks.executor.clear_dual_leg_position", new_callable=AsyncMock) as mock_clear, \
          patch("app.webhooks.executor.increment_dual_leg_trade_count", new_callable=AsyncMock) as mock_incr, \
          patch("app.webhooks.executor.increment_signals_today", new_callable=AsyncMock):
+
+        mock_pool.get = AsyncMock(return_value=mock_broker)
+        mock_pool.evict = AsyncMock()
 
         result, detail = await _execute_dual_leg(
             strategy, signal, uuid.uuid4(), redis,
@@ -255,13 +250,18 @@ async def test_dual_leg_reversal_closes_then_opens():
     redis = AsyncMock()
     strategy = _make_dual_leg_strategy(max_trades=5)
     signal = _make_futures_signal(action="SELL")
+    mock_broker = AsyncMock()
 
     with patch("app.webhooks.executor.get_dual_leg_state", new_callable=AsyncMock, return_value=("long", 1)), \
-         _mock_place_live_order("filled") as mock_place, \
+         patch("app.webhooks.executor.broker_pool") as mock_pool, \
+         _mock_place_order_with_broker("filled") as mock_place, \
          patch("app.webhooks.executor.clear_dual_leg_position", new_callable=AsyncMock) as mock_clear, \
          patch("app.webhooks.executor.set_dual_leg_position", new_callable=AsyncMock) as mock_set, \
          patch("app.webhooks.executor.increment_dual_leg_trade_count", new_callable=AsyncMock), \
          patch("app.webhooks.executor.increment_signals_today", new_callable=AsyncMock):
+
+        mock_pool.get = AsyncMock(return_value=mock_broker)
+        mock_pool.evict = AsyncMock()
 
         result, detail = await _execute_dual_leg(
             strategy, signal, uuid.uuid4(), redis,
@@ -284,13 +284,18 @@ async def test_dual_leg_stop_condition_closes_only():
     redis = AsyncMock()
     strategy = _make_dual_leg_strategy(max_trades=3)
     signal = _make_futures_signal(action="BUY")
+    mock_broker = AsyncMock()
 
     with patch("app.webhooks.executor.get_dual_leg_state", new_callable=AsyncMock, return_value=("short", 3)), \
-         _mock_place_live_order("filled") as mock_place, \
+         patch("app.webhooks.executor.broker_pool") as mock_pool, \
+         _mock_place_order_with_broker("filled") as mock_place, \
          patch("app.webhooks.executor.clear_dual_leg_position", new_callable=AsyncMock) as mock_clear, \
          patch("app.webhooks.executor.set_dual_leg_position", new_callable=AsyncMock) as mock_set, \
          patch("app.webhooks.executor.increment_dual_leg_trade_count", new_callable=AsyncMock) as mock_incr, \
          patch("app.webhooks.executor.increment_signals_today", new_callable=AsyncMock):
+
+        mock_pool.get = AsyncMock(return_value=mock_broker)
+        mock_pool.evict = AsyncMock()
 
         result, detail = await _execute_dual_leg(
             strategy, signal, uuid.uuid4(), redis,
@@ -316,7 +321,7 @@ async def test_dual_leg_no_action_when_stop_and_no_position():
     signal = _make_futures_signal(action="BUY")
 
     with patch("app.webhooks.executor.get_dual_leg_state", new_callable=AsyncMock, return_value=("", 3)), \
-         _mock_place_live_order("filled") as mock_place:
+         _mock_place_order_with_broker("filled") as mock_place:
 
         result, detail = await _execute_dual_leg(
             strategy, signal, uuid.uuid4(), redis,
@@ -335,11 +340,16 @@ async def test_dual_leg_close_fails_aborts_open():
     redis = AsyncMock()
     strategy = _make_dual_leg_strategy(max_trades=5)
     signal = _make_futures_signal(action="SELL")
+    mock_broker = AsyncMock()
 
     with patch("app.webhooks.executor.get_dual_leg_state", new_callable=AsyncMock, return_value=("long", 1)), \
-         patch("app.webhooks.executor._place_live_order", new_callable=AsyncMock,
+         patch("app.webhooks.executor.broker_pool") as mock_pool, \
+         patch("app.webhooks.executor._place_order_with_broker", new_callable=AsyncMock,
                return_value=("broker_error", {"error": "connection timeout"})) as mock_place, \
          patch("app.webhooks.executor.clear_dual_leg_position", new_callable=AsyncMock) as mock_clear:
+
+        mock_pool.get = AsyncMock(return_value=mock_broker)
+        mock_pool.evict = AsyncMock()
 
         result, detail = await _execute_dual_leg(
             strategy, signal, uuid.uuid4(), redis,
@@ -363,14 +373,19 @@ async def test_dual_leg_9012_treated_as_already_closed():
 
     close_detail = {"error": "Exchange1 API error 500: {\"code\":500,\"data\":\"9012 The position was not found\"}"}
     open_detail = {"status": "filled", "order_id": "xyz"}
+    mock_broker = AsyncMock()
 
     with patch("app.webhooks.executor.get_dual_leg_state", new_callable=AsyncMock, return_value=("long", 1)), \
-         patch("app.webhooks.executor._place_live_order", new_callable=AsyncMock,
+         patch("app.webhooks.executor.broker_pool") as mock_pool, \
+         patch("app.webhooks.executor._place_order_with_broker", new_callable=AsyncMock,
                side_effect=[("broker_error", close_detail), ("filled", open_detail)]) as mock_place, \
          patch("app.webhooks.executor.clear_dual_leg_position", new_callable=AsyncMock) as mock_clear, \
          patch("app.webhooks.executor.set_dual_leg_position", new_callable=AsyncMock) as mock_set, \
          patch("app.webhooks.executor.increment_dual_leg_trade_count", new_callable=AsyncMock), \
          patch("app.webhooks.executor.increment_signals_today", new_callable=AsyncMock):
+
+        mock_pool.get = AsyncMock(return_value=mock_broker)
+        mock_pool.evict = AsyncMock()
 
         result, detail = await _execute_dual_leg(
             strategy, signal, uuid.uuid4(), redis,
@@ -395,7 +410,7 @@ async def test_dual_leg_no_action_when_same_side():
     signal = _make_futures_signal(action="BUY")
 
     with patch("app.webhooks.executor.get_dual_leg_state", new_callable=AsyncMock, return_value=("long", 1)), \
-         _mock_place_live_order("filled") as mock_place:
+         _mock_place_order_with_broker("filled") as mock_place:
 
         result, detail = await _execute_dual_leg(
             strategy, signal, uuid.uuid4(), redis,
@@ -417,14 +432,19 @@ async def test_dual_leg_open_failed_after_successful_close():
 
     close_detail = {"status": "filled", "order_id": "close-1"}
     open_detail = {"error": "insufficient margin"}
+    mock_broker = AsyncMock()
 
     with patch("app.webhooks.executor.get_dual_leg_state", new_callable=AsyncMock, return_value=("long", 1)), \
-         patch("app.webhooks.executor._place_live_order", new_callable=AsyncMock,
+         patch("app.webhooks.executor.broker_pool") as mock_pool, \
+         patch("app.webhooks.executor._place_order_with_broker", new_callable=AsyncMock,
                side_effect=[("filled", close_detail), ("broker_error", open_detail)]) as mock_place, \
          patch("app.webhooks.executor.clear_dual_leg_position", new_callable=AsyncMock) as mock_clear, \
          patch("app.webhooks.executor.set_dual_leg_position", new_callable=AsyncMock) as mock_set, \
          patch("app.webhooks.executor.increment_dual_leg_trade_count", new_callable=AsyncMock) as mock_incr, \
          patch("app.webhooks.executor.increment_signals_today", new_callable=AsyncMock):
+
+        mock_pool.get = AsyncMock(return_value=mock_broker)
+        mock_pool.evict = AsyncMock()
 
         result, detail = await _execute_dual_leg(
             strategy, signal, uuid.uuid4(), redis,

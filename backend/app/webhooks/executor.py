@@ -25,6 +25,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.factory import get_broker
+from app.brokers.pool import broker_pool
 from app.context import trace_id_var
 from app.crypto.encryption import decrypt_credentials
 from app.db.models import BrokerConnection, PaperTradingSession, Strategy, WebhookSignal
@@ -101,6 +102,31 @@ def _is_position_not_found(execution_detail: dict) -> bool:
     return "9012" in haystack
 
 
+def _is_auth_error(text: str) -> bool:
+    """Return True if broker error is an authentication failure (401, 403, IP block)."""
+    return any(code in text for code in ("401", "403", "ip is error"))
+
+
+async def _place_with_retry(
+    broker_connection_id: str,
+    tenant_id: uuid.UUID,
+    broker,
+    signal: StandardSignal,
+    strategy_id: str,
+) -> tuple[str, dict, object]:
+    """Place order, retry once on auth error after evicting stale cached broker.
+
+    Returns (execution_result, execution_detail, broker) — broker may differ from
+    input if re-auth occurred.
+    """
+    result, detail = await _place_order_with_broker(broker, signal, strategy_id)
+    if result == "broker_error" and _is_auth_error(detail.get("error", "")):
+        await broker_pool.evict(broker_connection_id)
+        broker = await broker_pool.get(broker_connection_id, tenant_id)
+        result, detail = await _place_order_with_broker(broker, signal, strategy_id)
+    return result, detail, broker
+
+
 def _is_stop_condition(dual_leg_config: dict, strategy: dict, trade_count: int) -> bool:
     """Return True if no new open legs should be placed."""
     max_trades = dual_leg_config.get("max_trades", 0)
@@ -165,63 +191,64 @@ async def _execute_dual_leg(
     if err:
         return err[0], {"close": None, "open": None}
 
-    try:
-        # --- Close leg ---
-        if need_close:
-            close_signal = StandardSignal(
-                symbol=signal.symbol,
-                exchange=signal.exchange,
-                action=opposite_action,
-                quantity=signal.quantity,
-                order_type="MARKET",
-                product_type=signal.product_type,
-                leverage=signal.leverage,
-                position_model=signal.position_model,
-                position_side=position_side,  # must match Redis-tracked side to close correctly
+    # --- Close leg ---
+    if need_close:
+        close_signal = StandardSignal(
+            symbol=signal.symbol,
+            exchange=signal.exchange,
+            action=opposite_action,
+            quantity=signal.quantity,
+            order_type="MARKET",
+            product_type=signal.product_type,
+            leverage=signal.leverage,
+            position_model=signal.position_model,
+            position_side=position_side,  # must match Redis-tracked side to close correctly
+        )
+        exec_result, exec_detail, broker = await _place_with_retry(
+            broker_connection_id, tenant_id, broker, close_signal, strategy_id
+        )
+
+        if exec_result in ("filled", "accepted"):
+            close_detail = exec_detail
+            await clear_dual_leg_position(redis, strategy_id)
+        elif _is_position_not_found(exec_detail):
+            # Position already closed on exchange — treat as success
+            close_detail = {"status": "already_closed"}
+            await clear_dual_leg_position(redis, strategy_id)
+        else:
+            # Close genuinely failed — abort
+            logger.warning(
+                "dual_leg_close_failed",
+                strategy_id=strategy_id,
+                error=exec_detail.get("error"),
             )
-            exec_result, exec_detail = await _place_order_with_broker(broker, close_signal, strategy_id)
+            return "close_failed", {"close": exec_detail, "open": None}
 
-            if exec_result in ("filled", "accepted"):
-                close_detail = exec_detail
-                await clear_dual_leg_position(redis, strategy_id)
-            elif _is_position_not_found(exec_detail):
-                # Position already closed on exchange — treat as success
-                close_detail = {"status": "already_closed"}
-                await clear_dual_leg_position(redis, strategy_id)
-            else:
-                # Close genuinely failed — abort
-                logger.warning(
-                    "dual_leg_close_failed",
-                    strategy_id=strategy_id,
-                    error=exec_detail.get("error"),
-                )
-                return "close_failed", {"close": exec_detail, "open": None}
+    # --- Open leg ---
+    if need_open:
+        # Dual-leg open must explicitly set position_side so the broker adapter
+        # routes correctly: BUY→long uses _open_futures, SELL→short uses _open_futures.
+        # Without this, SELL with default position_side=None is treated as "close long".
+        open_signal = signal.model_copy(update={"position_side": new_side})
+        exec_result, exec_detail, broker = await _place_with_retry(
+            broker_connection_id, tenant_id, broker, open_signal, strategy_id
+        )
+        open_detail = exec_detail
 
-        # --- Open leg ---
-        if need_open:
-            # Dual-leg open must explicitly set position_side so the broker adapter
-            # routes correctly: BUY→long uses _open_futures, SELL→short uses _open_futures.
-            # Without this, SELL with default position_side=None is treated as "close long".
-            open_signal = signal.model_copy(update={"position_side": new_side})
-            exec_result, exec_detail = await _place_order_with_broker(broker, open_signal, strategy_id)
-            open_detail = exec_detail
+        if exec_result in ("filled", "accepted"):
+            await set_dual_leg_position(redis, strategy_id, new_side)
+            await increment_dual_leg_trade_count(redis, strategy_id)
+            await increment_signals_today(redis, strategy_id)
+            outcome = "reversed" if need_close else "opened"
+        else:
+            logger.warning(
+                "dual_leg_open_failed",
+                strategy_id=strategy_id,
+                error=exec_detail.get("error"),
+            )
+            outcome = "open_failed"
 
-            if exec_result in ("filled", "accepted"):
-                await set_dual_leg_position(redis, strategy_id, new_side)
-                await increment_dual_leg_trade_count(redis, strategy_id)
-                await increment_signals_today(redis, strategy_id)
-                outcome = "reversed" if need_close else "opened"
-            else:
-                logger.warning(
-                    "dual_leg_open_failed",
-                    strategy_id=strategy_id,
-                    error=exec_detail.get("error"),
-                )
-                outcome = "open_failed"
-
-            return outcome, {"close": close_detail, "open": open_detail}
-    finally:
-        await broker.close()
+        return outcome, {"close": close_detail, "open": open_detail}
 
     # Only close leg ran (stop condition)
     await increment_signals_today(redis, strategy_id)
@@ -229,26 +256,16 @@ async def _execute_dual_leg(
 
 
 async def _get_authenticated_broker(broker_connection_id: str, tenant_id: uuid.UUID):
-    """Fetch broker connection from DB, decrypt creds, return authenticated broker.
+    """Return authenticated broker from pool.
 
-    Caller is responsible for calling broker.close() when done.
     Returns (broker, None) on success or (None, error_tuple) on failure.
     """
-    async with async_session_factory() as session:
-        bc_result = await session.execute(
-            select(BrokerConnection).where(
-                BrokerConnection.id == uuid.UUID(broker_connection_id),
-                BrokerConnection.tenant_id == tenant_id,
-            )
-        )
-        bc = bc_result.scalar_one_or_none()
-        if not bc:
-            return None, ("broker_not_found", {"error": "broker_connection_not_found"})
-        creds = decrypt_credentials(tenant_id, bc.credentials)
-        broker_type = bc.broker_type
-
-    broker = await get_broker(broker_type, creds)
-    return broker, None
+    try:
+        broker = await broker_pool.get(broker_connection_id, tenant_id)
+        return broker, None
+    except RuntimeError as exc:
+        logger.error("live_order_broker_not_found", broker_connection_id=broker_connection_id, error=str(exc))
+        return None, ("broker_not_found", {"error": str(exc)})
 
 
 async def _place_order_with_broker(
@@ -306,23 +323,20 @@ async def _place_live_order(
     redis,
     update_redis: bool = True,
 ) -> tuple[str, dict]:
-    """Open own DB session, decrypt credentials, call broker.place_order().
+    """Place a single live order using the broker pool.
 
     Returns (execution_result, execution_detail).
     When update_redis=True (default), updates Redis position/signal counters on success.
-    Pass update_redis=False when the caller manages Redis state itself.
     Does NOT write to the WebhookSignal table (that is the router's job).
     """
     broker, err = await _get_authenticated_broker(broker_connection_id, tenant_id)
     if err:
         return err
 
-    try:
-        execution_result, execution_detail = await _place_order_with_broker(broker, signal, strategy_id)
-    finally:
-        await broker.close()
+    execution_result, execution_detail, _ = await _place_with_retry(
+        broker_connection_id, tenant_id, broker, signal, strategy_id
+    )
 
-    # Update Redis position counter
     if update_redis and redis and execution_result in ("filled", "accepted"):
         await update_position_count(redis, strategy_id, signal.action)
         await increment_signals_today(redis, strategy_id)
