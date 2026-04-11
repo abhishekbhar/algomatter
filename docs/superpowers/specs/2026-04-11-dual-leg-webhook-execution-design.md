@@ -113,6 +113,13 @@ Stop condition is met when **any** of the following is true:
 - `execution_detail: { "close": { broker error }, "open": null }`
 - Redis unchanged
 
+**Close leg returns "position not found" (error 9012):**
+- Position was already closed externally (manually on Exchange1 UI or by another system)
+- Treat as "close succeeded" — clear `position_side` in Redis
+- Proceed to open leg as normal
+- `execution_result` reflects the open outcome (`"opened"` or `"open_failed"`)
+- `execution_detail.close` records `{ "status": "already_closed" }`
+
 **Open leg fails (after successful close):**
 - `execution_result: "open_failed"`
 - `execution_detail: { "close": { close result }, "open": { broker error } }`
@@ -123,6 +130,10 @@ Stop condition is met when **any** of the following is true:
 - No broker calls
 - `execution_result: "no_action"`
 - Redis unchanged
+
+**Multi-strategy / multi-user isolation:**
+- Redis keys are scoped to `strategy_id` (UUID, unique per tenant)
+- Multiple users or multiple strategies per user never share state, even when trading the same symbol
 
 ---
 
