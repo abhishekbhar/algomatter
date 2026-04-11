@@ -94,11 +94,13 @@ async def _place_live_order(
     strategy_id: str,
     signal: StandardSignal,
     redis,
+    update_redis: bool = True,
 ) -> tuple[str, dict]:
     """Open own DB session, decrypt credentials, call broker.place_order().
 
     Returns (execution_result, execution_detail).
-    Updates Redis position counters on success.
+    When update_redis=True (default), updates Redis position/signal counters on success.
+    Pass update_redis=False when the caller manages Redis state itself.
     Does NOT write to the WebhookSignal table (that is the router's job).
     """
     from app.brokers.base import OrderRequest as BrokerOrderRequest
@@ -164,7 +166,7 @@ async def _place_live_order(
                 await broker.close()
 
     # Update Redis position counter
-    if redis and execution_result in ("filled", "accepted"):
+    if update_redis and redis and execution_result in ("filled", "accepted"):
         await update_position_count(redis, strategy_id, signal.action)
         await increment_signals_today(redis, strategy_id)
 

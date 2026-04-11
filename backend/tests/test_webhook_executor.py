@@ -122,3 +122,54 @@ async def test_execute_live_no_broker_connection_skips():
 
     assert results[0].execution_result == "no_broker_connection"
     arq_redis.enqueue_job.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_place_live_order_skips_redis_update_when_flag_false():
+    """When update_redis=False, position count and signals_today are not updated."""
+    broker_id = str(uuid.uuid4())
+    tenant_id = uuid.uuid4()
+    strategy_id = str(uuid.uuid4())
+    redis = AsyncMock()
+
+    signal = StandardSignal(
+        symbol="BTCUSDT",
+        exchange="EXCHANGE1",
+        action="BUY",
+        quantity="1",
+        order_type="MARKET",
+        product_type="FUTURES",
+    )
+
+    mock_order_response = MagicMock()
+    mock_order_response.status = "filled"
+    mock_order_response.model_dump.return_value = {"status": "filled", "order_id": "123"}
+
+    with patch("app.webhooks.executor.async_session_factory") as mock_factory, \
+         patch("app.webhooks.executor.get_broker", new_callable=AsyncMock) as mock_broker_fn, \
+         patch("app.webhooks.executor.decrypt_credentials", return_value={}):
+
+        mock_bc = MagicMock()
+        mock_bc.broker_type = "exchange1"
+        mock_bc.credentials = b"enc"
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = mock_bc
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_factory.return_value = mock_session
+
+        mock_broker = AsyncMock()
+        mock_broker.place_order = AsyncMock(return_value=mock_order_response)
+        mock_broker.close = AsyncMock()
+        mock_broker_fn.return_value = mock_broker
+
+        from app.webhooks.executor import _place_live_order
+        result, detail = await _place_live_order(
+            broker_id, tenant_id, strategy_id, signal, redis, update_redis=False
+        )
+
+    assert result == "filled"
+    redis.incr.assert_not_called()
