@@ -47,6 +47,7 @@ structlog.configure(
 from app.analytics.router import router as analytics_router
 from app.auth.router import router as auth_router
 from app.backtesting.router import router as backtest_router
+from app.brokers.pool import broker_pool
 from app.brokers.router import router as broker_router
 from app.config import settings
 from app.config_router import router as config_router
@@ -72,9 +73,10 @@ async def lifespan(app: FastAPI):
     arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     app.state.arq_redis = arq_pool
     yield
-    # shutdown: close redis pool
+    # shutdown: close redis pool and broker pool
     await redis_pool.aclose()
     await arq_pool.aclose()
+    await broker_pool.close_all()
 
 
 app = FastAPI(title="AlgoMatter", version="0.1.0", lifespan=lifespan)
