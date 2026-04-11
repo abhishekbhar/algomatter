@@ -79,7 +79,10 @@ class BrokerPool:
     async def close_all(self) -> None:
         """Close all cached brokers. Called on app shutdown."""
         for broker in self._pool.values():
-            await broker.close()
+            try:
+                await broker.close()
+            except Exception as exc:
+                logger.warning("broker_pool_close_error", error=str(exc))
         self._pool.clear()
         self._locks.clear()
         logger.info("broker_pool_closed_all")
