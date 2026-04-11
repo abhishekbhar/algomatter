@@ -190,11 +190,6 @@ class Exchange1Broker(BrokerAdapter):
         self._client = httpx.AsyncClient(
             timeout=10.0, headers={"User-Agent": _BROWSER_UA},
         )
-        try:
-            await self._post("/openapi/v1/token", body={}, signed=True)
-        except RuntimeError as exc:
-            logger.error("exchange1_auth_failed", error=str(exc))
-            return False
         return True
 
     async def verify_connection(self) -> bool:

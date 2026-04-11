@@ -127,3 +127,38 @@ async def test_thundering_herd_only_one_auth(monkeypatch):
 
     assert all(r is broker for r in results)
     assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_exchange1_authenticate_does_not_call_token_endpoint(monkeypatch):
+    """authenticate() must not make any HTTP calls — just load keys and create client."""
+    from app.brokers.exchange1 import Exchange1Broker
+    import cryptography.hazmat.primitives.serialization as ser
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    import base64
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+    der_bytes = private_key.private_bytes(
+        encoding=ser.Encoding.DER,
+        format=ser.PrivateFormat.PKCS8,
+        encryption_algorithm=ser.NoEncryption(),
+    )
+    private_key_b64 = base64.b64encode(der_bytes).decode()
+
+    broker = Exchange1Broker()
+    post_calls = []
+
+    async def mock_post(path, body=None, signed=False):
+        post_calls.append(path)
+        return {}
+
+    monkeypatch.setattr(broker, "_post", mock_post)
+
+    result = await broker.authenticate({
+        "api_key": "test-key",
+        "private_key": private_key_b64,
+    })
+
+    assert result is True
+    assert "/openapi/v1/token" not in post_calls
+    await broker.close()
