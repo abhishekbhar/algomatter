@@ -115,15 +115,32 @@ Every account has **USD-equivalent aggregate fields**:
 - `total` — `cryptoTotal + fiatTotal`
 - `acct_total` (adapter-computed) = `cryptoTotal + fiatTotal` — universal aggregate for all account types
 
-| Biz | Contents |
-|-----|----------|
-| `asset` | Base-token holdings (BTC, ETH, SOL) — use for `get_positions` |
-| `spot` | Quote currencies (USDT, USDC, LINK, etc.) — **Global 2 only** (India's `spot` is empty) |
-| `cfd` | Futures margin — INR for India, USDT for Global 2 |
-| `otc` | OTC account (usually empty) |
-| `options` | Options account (usually empty) |
+| Biz | `product_type` param | Contents |
+|-----|----------|----------|
+| `cfd` | `"FUTURES"` | Futures margin — INR for India, USDT for Global 2 |
+| `spot` | `"SPOT"` | Quote currencies (USDT, USDC, LINK…) — Global 2 only; India's is empty |
+| `asset` | `"FUNDING"` | Funding wallet: base-token crypto + USDT — exchange UI "Funding" category |
+| `options` | — | Options account (usually empty) |
+| `otc` | — | OTC account (usually empty) |
 
 ⚠️ Base-token spot balances are in `asset`, **not** `spot`.
+
+### Exchange UI ↔ Account mapping (verified)
+
+**Global 2 observed totals:**
+```
+Funding  = asset.total  = 11.73 USD   (USDT + BTC/ETH dust in funding wallet)
+Spot     = spot.total   = 100.49 USD  (USDT + USDC + LINK)
+Futures  = cfd.total    = 209.69 USD
+Total Est. Value        = 321.91 USD  ✓
+```
+
+**India observed totals:**
+```
+Futures  = cfd.total    = ~10.78 USD  (in INR: ~970 INR)
+Funding  = asset.total  = ~0.0001 USD (dust only)
+Spot     = spot.total   = 0           (empty — India keeps all money in cfd)
+```
 
 ### Currency fields per account entry
 
@@ -146,36 +163,18 @@ Each entry in `currencies` has a `balance` object:
 | Field | Maps to | Notes |
 |-------|---------|-------|
 | `availableMargin` | `available` (futures) | Prefer over `available` for futures |
-| `margin` | `used_margin` | Active margin in use |
+| `margin` | `used_margin` | Active margin in use — **NOT `hold`** |
 | `hold` | `frozen_deposit` | Frozen/locked funds |
 | `profitUnreal` | `unrealized_pnl` | Floating P&L |
 | `total` | `total` | Per-currency total |
 
-### India vs Global 2 — Balance Logic
+### Balance logic by product_type
 
-**Futures (`get_balance("FUTURES")`)**
-- Both use `cfd` account, `availableMargin` field
-- India: currency is `INR`; Global 2: currency is `USDT`
-- Logic is identical — currency propagates automatically
+**`"FUTURES"`** — `cfd` account, `availableMargin` field; India=INR, Global 2=USDT
 
-**Spot (`get_balance("SPOT")`)**
-- Global 2: `spot` account has USDT/USDC/LINK → use `acct_total` (USD aggregate), report as `USD`
-- India: `spot` account is empty → fall back to `asset` account, find `INR` entry, report as `INR`
+**`"SPOT"`** — `spot.acct_total` (USD aggregate, Global 2); falls back to `asset` INR entry (India ~0)
 
-```python
-# Adapter logic (simplified):
-if product_type == "SPOT":
-    # Try spot account first (Global 2)
-    for acc in accounts:
-        if acc["account_type"] == "spot":
-            at = Decimal(str(acc.get("acct_total", 0)))
-            if at > 0:
-                return AccountBalance(available=at, total=at, currency="USD")
-    # Fall back to INR asset account (India)
-    for acc in accounts:
-        if acc["account_type"] == "asset" and acc["currency"] == "INR":
-            ...
-```
+**`"FUNDING"`** — `asset.acct_total` (USD aggregate); Global 2=~11.73 USD, India=~0 (dust)
 
 ### IP Allowlist
 
