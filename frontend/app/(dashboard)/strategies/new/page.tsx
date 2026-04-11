@@ -256,6 +256,7 @@ export default function NewStrategyPage() {
                   const checked = e.target.checked;
                   setForm({ ...form, trading_hours_enabled: checked });
                   if (checked) setTradingHoursOpen(true);
+                  else setTradingHoursOpen(false);
                 }}
               />
             </Flex>
@@ -325,24 +326,24 @@ export default function NewStrategyPage() {
                   const checked = e.target.checked;
                   setForm({ ...form, dual_leg_enabled: checked });
                   if (checked) setDualLegOpen(true);
+                  else setDualLegOpen(false);
                 }}
               />
             </Flex>
             <Collapse in={dualLegOpen} animateOpacity>
               <Box px={4} pb={4} pt={2} borderTop="1px" borderColor="gray.200">
-                {form.dual_leg_enabled && (
-                  <FormControl>
-                    <FormLabel fontSize="sm">Max Trades</FormLabel>
-                    <NumberInput
-                      value={form.dual_leg_max_trades}
-                      onChange={(_, val) => setForm({ ...form, dual_leg_max_trades: val || 0 })}
-                      min={0}
-                    >
-                      <NumberInputField />
-                    </NumberInput>
-                    <Text fontSize="xs" color="gray.500" mt={1}>0 = unlimited</Text>
-                  </FormControl>
-                )}
+                <FormControl>
+                  <FormLabel fontSize="sm">Max Trades</FormLabel>
+                  <NumberInput
+                    value={form.dual_leg_max_trades}
+                    onChange={(_, val) => setForm({ ...form, dual_leg_max_trades: val || 0 })}
+                    min={0}
+                    isDisabled={!form.dual_leg_enabled}
+                  >
+                    <NumberInputField isDisabled={!form.dual_leg_enabled} />
+                  </NumberInput>
+                  <Text fontSize="xs" color="gray.500" mt={1}>0 = unlimited</Text>
+                </FormControl>
               </Box>
             </Collapse>
           </Box>
