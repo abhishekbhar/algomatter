@@ -611,6 +611,17 @@ class Exchange1Broker(BrokerAdapter):
                     )
             return AccountBalance(available=Decimal("0"), used_margin=Decimal("0"), total=Decimal("0"))
 
+        if product_type == "FUNDING":
+            # Exchange1 "Funding" account = asset biz account.
+            # Holds base-token crypto plus any USDT sitting in the funding wallet.
+            # Use acct_total (cryptoTotal + fiatTotal) for a USD-equivalent aggregate.
+            for acc in accounts:
+                if acc.get("account_type") == "asset":
+                    at = Decimal(str(acc.get("acct_total", 0)))
+                    if at > 0:
+                        return AccountBalance(available=at, total=at, currency="USD")
+            return AccountBalance(available=Decimal("0"), total=Decimal("0"))
+
         if product_type == "SPOT":
             # Exchange1 Global: spot account holds multiple currencies (USDT, USDC, LINK…).
             #   Use acct_total = cryptoTotal + fiatTotal (USD-equivalent aggregate) so all

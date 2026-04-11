@@ -30,6 +30,7 @@ export function BrokerStatsBar({ brokerId, brokerType }: Props) {
   const { data: stats, isLoading: statsLoading } = useBrokerStats(brokerId);
   const { data: futuresBalance } = useBrokerBalance(brokerId, "FUTURES");
   const { data: spotBalance } = useBrokerBalance(brokerId, "SPOT");
+  const { data: fundingBalance } = useBrokerBalance(brokerId, "FUNDING");
   const cardBg = useColorModeValue("white", "gray.800");
   const borderColor = useColorModeValue("gray.200", "gray.700");
   const pnlColor = stats && stats.total_realized_pnl >= 0 ? "green.400" : "red.400";
@@ -46,6 +47,7 @@ export function BrokerStatsBar({ brokerId, brokerType }: Props) {
 
   const futuresCur = futuresBalance?.currency ?? "USDT";
   const spotCur = spotBalance?.currency ?? "USDT";
+  const fundingCur = fundingBalance?.currency ?? "USD";
 
   return (
     <Box mb={6}>
@@ -68,7 +70,7 @@ export function BrokerStatsBar({ brokerId, brokerType }: Props) {
         </Stat>
       </SimpleGrid>
 
-      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
         {/* Futures (CFD) account */}
         <Box bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
           <Text fontSize="xs" fontWeight="semibold" color="yellow.400" textTransform="uppercase" mb={3}>
@@ -113,6 +115,23 @@ export function BrokerStatsBar({ brokerId, brokerType }: Props) {
             <Stat>
               <StatLabel fontSize="xs">Total</StatLabel>
               <StatNumber fontSize="sm">{spotBalance !== undefined ? formatAmount(spotBalance.total, spotCur) : "—"}</StatNumber>
+            </Stat>
+          </SimpleGrid>
+        </Box>
+
+        {/* Funding / Asset account */}
+        <Box bg={cardBg} borderWidth={1} borderColor={borderColor} borderRadius="md" p={4}>
+          <Text fontSize="xs" fontWeight="semibold" color="blue.400" textTransform="uppercase" mb={3}>
+            Funding Account
+          </Text>
+          <SimpleGrid columns={2} spacing={3}>
+            <Stat>
+              <StatLabel fontSize="xs">Available</StatLabel>
+              <StatNumber fontSize="sm">{fundingBalance !== undefined ? formatAmount(fundingBalance.available, fundingCur) : "—"}</StatNumber>
+            </Stat>
+            <Stat>
+              <StatLabel fontSize="xs">Total</StatLabel>
+              <StatNumber fontSize="sm">{fundingBalance !== undefined ? formatAmount(fundingBalance.total, fundingCur) : "—"}</StatNumber>
             </Stat>
           </SimpleGrid>
         </Box>
