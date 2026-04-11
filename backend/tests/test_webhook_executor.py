@@ -90,22 +90,20 @@ async def test_execute_paper_mode_calls_paper_engine():
 
 
 @pytest.mark.asyncio
-async def test_execute_live_mode_enqueues_arq_job():
+async def test_execute_live_mode_places_order_synchronously():
+    """Live mode calls _place_live_order directly (no ARQ queue)."""
     broker_id = uuid.uuid4()
     strategy = _make_strategy(mode="live", broker_connection_id=broker_id)
     redis = AsyncMock()
     redis.mget.return_value = [None, None]
     session = AsyncMock()
-    session.add = MagicMock()
-    session.commit = AsyncMock()
-    arq_redis = AsyncMock()
 
-    results = await execute([strategy], _make_payload(), redis, session, arq_redis, tenant_id=uuid.uuid4())
+    with patch("app.webhooks.executor._place_live_order", new_callable=AsyncMock,
+               return_value=("filled", {"status": "filled", "order_id": "abc"})) as mock_place:
+        results = await execute([strategy], _make_payload(), redis, session, tenant_id=uuid.uuid4())
 
-    assert results[0].execution_result == "queued"
-    arq_redis.enqueue_job.assert_called_once()
-    call_args = arq_redis.enqueue_job.call_args
-    assert call_args.args[0] == "execute_live_order_task"
+    assert results[0].execution_result == "filled"
+    mock_place.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -440,3 +438,27 @@ async def test_dual_leg_open_failed_after_successful_close():
     mock_clear.assert_called_once()   # close succeeded → position cleared
     mock_set.assert_not_called()      # open failed → position_side not set
     mock_incr.assert_not_called()     # trade_count not incremented
+
+
+@pytest.mark.asyncio
+async def test_execute_live_mode_routes_to_dual_leg_when_enabled():
+    """execute() calls _execute_dual_leg when dual_leg.enabled is true."""
+    broker_id = uuid.uuid4()
+    strategy = _make_strategy(
+        mode="live",
+        broker_connection_id=broker_id,
+        rules={"dual_leg": {"enabled": True, "max_trades": 5}},
+    )
+    redis = AsyncMock()
+    redis.mget.return_value = [None, None]
+    session = AsyncMock()
+
+    with patch("app.webhooks.executor._execute_dual_leg", new_callable=AsyncMock,
+               return_value=("opened", {"close": None, "open": {"status": "filled"}})) as mock_dual, \
+         patch("app.webhooks.executor._place_live_order", new_callable=AsyncMock) as mock_single:
+
+        results = await execute([strategy], _make_payload(), redis, session, tenant_id=uuid.uuid4())
+
+    assert results[0].execution_result == "opened"
+    mock_dual.assert_called_once()
+    mock_single.assert_not_called()

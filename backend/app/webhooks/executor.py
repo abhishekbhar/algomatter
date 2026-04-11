@@ -5,6 +5,8 @@ execute()                  — public entry point called from router.
                              Live orders are placed synchronously (awaited) so
                              latency stays in the milliseconds range.
                              Paper trades are executed concurrently via asyncio.gather.
+_execute_dual_leg()        — close-then-open two-leg execution for dual_leg strategies.
+                             Called from execute() when dual_leg.enabled is true.
 _place_live_order()        — opens its own DB session, decrypts creds, calls
                              broker.place_order(), updates Redis counters.
 execute_live_order_task()  — ARQ background task used only by the recovery cron.
@@ -429,24 +431,38 @@ async def execute(
                 execution_result="pending",
                 signal_id=signal_id,
             ))
-            t = asyncio.create_task(
-                _place_live_order(
-                    strategy["broker_connection_id"],
-                    tenant_id,
-                    strategy["id"],
-                    signal,
-                    redis,
+
+            dual_leg_config = (strategy.get("rules") or {}).get("dual_leg", {})
+            if dual_leg_config.get("enabled"):
+                t = asyncio.create_task(
+                    _execute_dual_leg(
+                        strategy,
+                        signal,
+                        tenant_id,
+                        redis,
+                        dual_leg_config,
+                    )
                 )
-            )
-            live_tasks.append(t)
-            live_task_indices.append(idx)
+            else:
+                t = asyncio.create_task(
+                    _place_live_order(
+                        strategy["broker_connection_id"],
+                        tenant_id,
+                        strategy["id"],
+                        signal,
+                        redis,
+                    )
+                )
             logger.info(
                 "live_order_started",
                 strategy_id=strategy["id"],
                 strategy=strategy.get("name"),
                 symbol=signal.symbol,
                 action=signal.action,
+                dual_leg=bool(dual_leg_config.get("enabled")),
             )
+            live_tasks.append(t)
+            live_task_indices.append(idx)
 
         else:
             # "log" mode — signal recorded, no execution
