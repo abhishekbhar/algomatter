@@ -24,7 +24,6 @@ import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.brokers.factory import get_broker
 from app.brokers.pool import broker_pool
 from app.context import trace_id_var
 from app.crypto.encryption import decrypt_credentials
