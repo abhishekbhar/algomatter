@@ -195,7 +195,7 @@ async def _execute_dual_leg(
         close_signal = StandardSignal(
             symbol=signal.symbol,
             exchange=signal.exchange,
-            action=opposite_action,
+            action=signal.action,
             quantity=signal.quantity,
             order_type="MARKET",
             product_type=signal.product_type,

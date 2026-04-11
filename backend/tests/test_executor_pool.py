@@ -1,10 +1,10 @@
 # backend/tests/test_executor_pool.py
 import pytest
 import uuid
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock, call
 
 from app.brokers.base import OrderResponse
-from app.webhooks.executor import _is_auth_error, _place_with_retry
+from app.webhooks.executor import _is_auth_error, _place_with_retry, _execute_dual_leg
 from app.webhooks.schemas import StandardSignal
 
 
@@ -124,3 +124,62 @@ async def test_place_with_retry_non_auth_error_no_retry():
 
     assert result == "broker_error"
     mock_pool.evict.assert_not_awaited()  # no evict for non-auth errors
+
+
+# --- _execute_dual_leg close leg action routing ---
+
+@pytest.mark.asyncio
+async def test_dual_leg_close_uses_signal_action_not_opposite():
+    """Close leg must use signal.action so Exchange1 routes to _close_futures.
+
+    Bug: action=opposite_action caused BUY+long or SELL+short → _open_futures (CREATE).
+    Fix: action=signal.action causes SELL+long or BUY+short → _close_futures (CLOSE).
+    """
+    strategy = {
+        "id": "strat-1",
+        "broker_connection_id": str(uuid.uuid4()),
+        "rules": {},
+    }
+    # SELL signal incoming; Redis shows existing long position → should close long
+    sell_signal = StandardSignal(
+        symbol="BTCUSDT",
+        exchange="EXCHANGE1",
+        action="SELL",
+        quantity=1,
+        order_type="MARKET",
+        product_type="FUTURES",
+        leverage=10,
+        position_model="cross",
+    )
+    dual_leg_config = {}
+    tenant_id = uuid.uuid4()
+    redis = AsyncMock()
+
+    captured_signals = []
+
+    async def mock_place_order(broker, sig, strat_id):
+        captured_signals.append(sig)
+        return "filled", {"order_id": "futures:close:btc:1234567890"}
+
+    broker = AsyncMock()
+
+    with patch("app.webhooks.executor.get_dual_leg_state", return_value=("long", 1)), \
+         patch("app.webhooks.executor._get_authenticated_broker", return_value=(broker, None)), \
+         patch("app.webhooks.executor._place_order_with_broker", side_effect=mock_place_order), \
+         patch("app.webhooks.executor.clear_dual_leg_position", new_callable=AsyncMock), \
+         patch("app.webhooks.executor.set_dual_leg_position", new_callable=AsyncMock):
+
+        result, detail = await _execute_dual_leg(
+            strategy, sell_signal, tenant_id, redis, dual_leg_config
+        )
+
+    # Must have placed at least the close leg
+    assert len(captured_signals) >= 1
+    close_sig = captured_signals[0]
+    # Close leg action must match signal.action ("SELL"), not opposite ("BUY").
+    # "SELL" + position_side="long" → _close_futures (CLOSE endpoint) ✓
+    # "BUY"  + position_side="long" → _open_futures (CREATE endpoint) ✗  ← the bug
+    assert close_sig.action == "SELL", (
+        f"Close leg sent action={close_sig.action!r} but expected 'SELL'. "
+        "Bug: using opposite_action routes to _open_futures instead of _close_futures."
+    )
