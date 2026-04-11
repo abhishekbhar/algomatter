@@ -340,7 +340,7 @@ export default function NewStrategyPage() {
                     min={0}
                     isDisabled={!form.dual_leg_enabled}
                   >
-                    <NumberInputField isDisabled={!form.dual_leg_enabled} />
+                    <NumberInputField />
                   </NumberInput>
                   <Text fontSize="xs" color="gray.500" mt={1}>0 = unlimited</Text>
                 </FormControl>
